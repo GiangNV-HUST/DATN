@@ -1,0 +1,56 @@
+# Database
+psycopg2-binary>=2.9.9
+
+# Data Processing
+pandas>=2.1.4
+numpy>=1.26.2
+
+# Stock Data
+vnstock>=3.2.0
+
+# Utilities
+python-dotenv==1.0.0
+pytz==2024.1
+
+
+# Kafka
+kafka-python==2.0.2
+
+
+# Machine Learning & Predictions
+scikit-learn==1.3.2
+statsmodels>=0.14.0  # For ARIMA time series forecasting
+xgboost>=2.0.0  # For XGBoost ensemble predictions (CPU-friendly)
+
+# Discord Intergration 
+discord-webhook==1.3.0
+
+# Additional Utilities
+scipy==1.11.4
+
+
+# Google Genertive AI 
+google-generativeai==0.8.3
+
+# Discord Bot
+discord.py==2.3.2
+
+
+# Web Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+websockets==12.0
+
+# CORS
+fastapi-cors==0.0.6
+
+# Pydantic (validation)
+pydantic==2.5.0
+
+# Additional utilities
+python-multipart==0.0.6
+
+# MCP (Model Context Protocol) for V3 Agent
+anthropic>=0.40.0
+aiohttp>=3.9.0
+
