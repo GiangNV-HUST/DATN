@@ -1,4 +1,4 @@
-# Dockerfile for Discord Bot
+# Dockerfile for Discord Bot - Hybrid AI Agent System
 FROM python:3.11-slim
 
 # Set working directory
@@ -16,6 +16,9 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Discord bot specific dependencies
+RUN pip install --no-cache-dir discord.py>=2.3.0
+
 # Copy application code
 COPY src/ ./src/
 COPY .env .env
@@ -24,9 +27,9 @@ COPY .env .env
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 
-# Health check
+# Health check - check if bot process is running
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import sys; sys.exit(0)"
+    CMD python -c "import discord; import sys; sys.exit(0)"
 
-# Run the bot
-CMD ["python", "src/AI_agent/discord_bot.py"]
+# Run the SIMPLE bot (mention-based, no complex commands)
+CMD ["python", "src/ai_agent_hybrid/discord_bot_simple.py"]

@@ -1,0 +1,93 @@
+# Docker Compose - Discord Bot Only (Minimal)
+# Chỉ chạy Discord Bot + Database (không cần Airflow, Kafka)
+
+version: '3.11'
+
+services:
+  # TimescaleDB - Database chính
+  timescaledb:
+    image: timescale/timescaledb:latest-pg14
+    container_name: stock_timescaledb
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: stock
+    ports:
+      - "5434:5432"
+    volumes:
+      - timescale-data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    command: >
+      postgres
+      -c shared_preload_libraries=timescaledb
+      -c timescaledb.telemetry_level=off
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    networks:
+      - stock-network
+
+  # PgAdmin - Web UI cho database (optional)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: stock-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - stock-network
+    profiles:
+      - tools  # Optional - chỉ chạy khi cần
+
+  # Discord Bot - AI Stock Analysis Bot (Simple Version)
+  discord-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    container_name: stock-discord-bot
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      # Database
+      DB_HOST: timescaledb
+      DB_PORT: 5432
+      DB_NAME: stock
+      DB_USER: postgres
+      DB_PASSWORD: postgres123
+      # Discord & AI
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    volumes:
+      - ./src:/app/src
+      - ./.env:/app/.env
+    restart: unless-stopped
+    networks:
+      - stock-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import discord; print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  stock-network:
+    driver: bridge
+
+volumes:
+  timescale-data:
+    driver: local
+  pgadmin-data:
+    driver: local

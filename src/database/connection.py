@@ -34,8 +34,20 @@ class Database:
             logger.info("Database connection closed")
             
     def get_cursor(self):
-        """Lấy cursor"""
-        if not self.connection:
+        """Lấy cursor với auto-reconnect"""
+        # Check if connection is alive
+        if not self.connection or self.connection.closed:
+            logger.warning("⚠️ Connection closed, reconnecting...")
             self.connect()
+
+        # Test connection
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT 1")
+            cursor.close()
+        except Exception as e:
+            logger.warning(f"⚠️ Connection test failed: {e}, reconnecting...")
+            self.connect()
+
         return self.connection.cursor()
         

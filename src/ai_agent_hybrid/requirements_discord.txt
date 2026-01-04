@@ -1,0 +1,18 @@
+# Discord Bot Requirements for AI Agent Hybrid System
+
+# Core Discord Library
+discord.py>=2.3.0
+
+# Environment Variables
+python-dotenv>=1.0.0
+
+# Already installed (from main project)
+# google-generativeai>=0.3.0
+# psycopg2-binary>=2.9.0
+# asyncio (built-in)
+
+# Optional (for future features)
+# aiohttp>=3.9.0  # For async HTTP requests
+# pillow>=10.0.0  # For chart generation
+# matplotlib>=3.8.0  # For chart plotting
+# pandas>=2.1.0  # For data analysis
