@@ -1,6 +1,6 @@
 """
 Airflow DAG - Thu thập dữ liệu cổ phiếu
-Scheduler: Chạy mỗi ngày vào lúc 9h sáng
+Scheduler: Chạy mỗi ngày vào lúc 15:30 chiều (sau khi thị trường đóng cửa)
 """
 
 from airflow import DAG
@@ -32,19 +32,30 @@ default_args = {
 dag = DAG(
     "stock_data_collector",
     default_args=default_args,
-    description="Crawl stock data và gửi vào kafka",
-    schedule_interval="0 9 * * 1-5",
+    description="Crawl daily stock data - End of Day (sau khi thị trường đóng cửa)",
+    schedule_interval="30 15 * * 1-5",  # 15:30 chiều (sau khi đóng cửa)
     catchup=False,
-    tags=["stock", "phase"],
+    tags=["stock", "daily", "eod"],
 )
 
 # ============================================================================
-# DANH SÁCH CỔ PHIẾU
+# DANH SÁCH 50 CỔ PHIẾU (VN30 + VNMidcap phổ biến)
 # ============================================================================
 
-TICKERS_BATCH_1 = ["VNM", "VCB", "HPG", "VHM", "VIC"]
-TICKERS_BATCH_2 = ["FPT", "MSN", "MWG", "VRE", "GAS"]
-TICKERS_BATCH_3 = ["TCB", "BID", "CTG", "VPB", "POW"]
+# Batch 1: Top 10 Ngân hàng & Tài chính
+TICKERS_BATCH_1 = ["VCB", "BID", "CTG", "VPB", "TCB", "MBB", "ACB", "STB", "HDB", "SSI"]
+
+# Batch 2: Top 10 Bất động sản & Xây dựng
+TICKERS_BATCH_2 = ["VHM", "VIC", "VRE", "NVL", "PDR", "DXG", "KDH", "HDC", "DIG", "BCM"]
+
+# Batch 3: Top 10 Thực phẩm & Tiêu dùng
+TICKERS_BATCH_3 = ["VNM", "MSN", "MWG", "SAB", "VHC", "FRT", "MCH", "ASM", "DGW", "PNJ"]
+
+# Batch 4: Top 10 Công nghiệp & Năng lượng
+TICKERS_BATCH_4 = ["HPG", "GAS", "POW", "PLX", "PVD", "PVS", "PVT", "GEG", "NT2", "REE"]
+
+# Batch 5: Top 10 Công nghệ & Dịch vụ
+TICKERS_BATCH_5 = ["FPT", "VGC", "GMD", "SHB", "EVF", "VCI", "VIX", "HCM", "CMG", "ITD"]
 
 # =============================================================================
 # Task function
@@ -113,29 +124,46 @@ def crawl_and_produce_batch(tickers, batch_name):
 
 
 # ===============================================================================
-# TASKS
+# TASKS - 5 batches chạy song song
 # ===============================================================================
 
 task_batch_1 = PythonOperator(
     task_id="crawl_batch_1",
     python_callable=crawl_and_produce_batch,
-    op_kwargs={"tickers": TICKERS_BATCH_1, "batch_name": "Batch 1"},
+    op_kwargs={"tickers": TICKERS_BATCH_1, "batch_name": "Batch 1 - Banks"},
     dag=dag,
 )
 
 task_batch_2 = PythonOperator(
     task_id="crawl_batch_2",
     python_callable=crawl_and_produce_batch,
-    op_kwargs={"tickers": TICKERS_BATCH_2, "batch_name": "Batch 2"},
+    op_kwargs={"tickers": TICKERS_BATCH_2, "batch_name": "Batch 2 - Real Estate"},
     dag=dag,
 )
 
 task_batch_3 = PythonOperator(
     task_id="crawl_batch_3",
     python_callable=crawl_and_produce_batch,
-    op_kwargs={"tickers": TICKERS_BATCH_3, "batch_name": "Batch 3"},
+    op_kwargs={"tickers": TICKERS_BATCH_3, "batch_name": "Batch 3 - Consumer"},
     dag=dag,
 )
+
+task_batch_4 = PythonOperator(
+    task_id="crawl_batch_4",
+    python_callable=crawl_and_produce_batch,
+    op_kwargs={"tickers": TICKERS_BATCH_4, "batch_name": "Batch 4 - Industry"},
+    dag=dag,
+)
+
+task_batch_5 = PythonOperator(
+    task_id="crawl_batch_5",
+    python_callable=crawl_and_produce_batch,
+    op_kwargs={"tickers": TICKERS_BATCH_5, "batch_name": "Batch 5 - Technology"},
+    dag=dag,
+)
+
+# All batches run in parallel (no dependencies)
+# Airflow will execute them concurrently based on available workers
 
 # ==========================================================================
 # Task Dependencies (chạy song song)

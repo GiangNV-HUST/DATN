@@ -29,8 +29,10 @@ discord-webhook==1.3.0
 scipy==1.11.4
 
 
-# Google Genertive AI 
-google-generativeai==0.8.3
+# AI APIs
+# Google Generative AI (deprecated - using OpenAI now)
+# google-generativeai==0.8.3
+openai>=1.0.0
 
 # Discord Bot
 discord.py==2.3.2

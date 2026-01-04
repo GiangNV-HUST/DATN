@@ -84,3 +84,215 @@ class VnStockClient:
             logger.error(f"❌ Error fetching daily data for {ticker}: {e}")
             return None
 
+    # ========================================================================
+    # FINANCIAL DATA METHODS
+    # ========================================================================
+
+    def get_balance_sheet(self, ticker, period='quarter'):
+        """
+        Lấy bảng cân đối kế toán
+
+        Args:
+            ticker: Mã cổ phiếu
+            period: 'quarter' hoặc 'year'
+
+        Returns:
+            DataFrame hoặc None
+        """
+        try:
+            stock = Vnstock().stock(symbol=ticker, source=self.source)
+            df = stock.finance.balance_sheet(period=period)
+
+            if df is None or df.empty:
+                logger.warning(f"No balance sheet data for {ticker} ({period})")
+                return None
+
+            logger.info(f"✅ Fetched balance sheet for {ticker} ({period}): {len(df)} records")
+            return df
+
+        except Exception as e:
+            logger.error(f"❌ Error fetching balance sheet for {ticker}: {e}")
+            return None
+
+    def get_cash_flow(self, ticker, period='quarter'):
+        """
+        Lấy báo cáo lưu chuyển tiền tệ
+
+        Args:
+            ticker: Mã cổ phiếu
+            period: 'quarter' hoặc 'year'
+
+        Returns:
+            DataFrame hoặc None
+        """
+        try:
+            stock = Vnstock().stock(symbol=ticker, source=self.source)
+            df = stock.finance.cash_flow(period=period)
+
+            if df is None or df.empty:
+                logger.warning(f"No cash flow data for {ticker} ({period})")
+                return None
+
+            logger.info(f"✅ Fetched cash flow for {ticker} ({period}): {len(df)} records")
+            return df
+
+        except Exception as e:
+            logger.error(f"❌ Error fetching cash flow for {ticker}: {e}")
+            return None
+
+    def get_income_statement(self, ticker, period='quarter'):
+        """
+        Lấy báo cáo kết quả kinh doanh
+
+        Args:
+            ticker: Mã cổ phiếu
+            period: 'quarter' hoặc 'year'
+
+        Returns:
+            DataFrame hoặc None
+        """
+        try:
+            stock = Vnstock().stock(symbol=ticker, source=self.source)
+            df = stock.finance.income_statement(period=period)
+
+            if df is None or df.empty:
+                logger.warning(f"No income statement data for {ticker} ({period})")
+                return None
+
+            logger.info(f"✅ Fetched income statement for {ticker} ({period}): {len(df)} records")
+            return df
+
+        except Exception as e:
+            logger.error(f"❌ Error fetching income statement for {ticker}: {e}")
+            return None
+
+    def get_financial_ratios(self, ticker, period='quarter'):
+        """
+        Lấy các chỉ số tài chính
+
+        Args:
+            ticker: Mã cổ phiếu
+            period: 'quarter' hoặc 'year'
+
+        Returns:
+            DataFrame hoặc None
+        """
+        try:
+            stock = Vnstock().stock(symbol=ticker, source=self.source)
+            df = stock.finance.ratio(period=period)
+
+            if df is None or df.empty:
+                logger.warning(f"No financial ratios data for {ticker} ({period})")
+                return None
+
+            logger.info(f"✅ Fetched financial ratios for {ticker} ({period}): {len(df)} records")
+            return df
+
+        except Exception as e:
+            logger.error(f"❌ Error fetching financial ratios for {ticker}: {e}")
+            return None
+
+    # ========================================================================
+    # COMPANY INFORMATION METHODS
+    # ========================================================================
+
+    def get_company_profile(self, ticker):
+        """
+        Lấy thông tin cơ bản công ty
+
+        Args:
+            ticker: Mã cổ phiếu
+
+        Returns:
+            dict hoặc DataFrame hoặc None
+        """
+        try:
+            stock = Vnstock().stock(symbol=ticker, source=self.source)
+            data = stock.company.profile()
+
+            if data is None or (isinstance(data, pd.DataFrame) and data.empty):
+                logger.warning(f"No company profile for {ticker}")
+                return None
+
+            logger.info(f"✅ Fetched company profile for {ticker}")
+            return data
+
+        except Exception as e:
+            logger.error(f"❌ Error fetching company profile for {ticker}: {e}")
+            return None
+
+    def get_company_overview(self, ticker):
+        """
+        Lấy tổng quan công ty
+
+        Args:
+            ticker: Mã cổ phiếu
+
+        Returns:
+            dict hoặc DataFrame hoặc None
+        """
+        try:
+            stock = Vnstock().stock(symbol=ticker, source=self.source)
+            data = stock.company.overview()
+
+            if data is None or (isinstance(data, pd.DataFrame) and data.empty):
+                logger.warning(f"No company overview for {ticker}")
+                return None
+
+            logger.info(f"✅ Fetched company overview for {ticker}")
+            return data
+
+        except Exception as e:
+            logger.error(f"❌ Error fetching company overview for {ticker}: {e}")
+            return None
+
+    def get_company_officers(self, ticker):
+        """
+        Lấy thông tin ban lãnh đạo
+
+        Args:
+            ticker: Mã cổ phiếu
+
+        Returns:
+            DataFrame hoặc None
+        """
+        try:
+            stock = Vnstock().stock(symbol=ticker, source=self.source)
+            df = stock.company.officers()
+
+            if df is None or df.empty:
+                logger.warning(f"No officers data for {ticker}")
+                return None
+
+            logger.info(f"✅ Fetched officers for {ticker}: {len(df)} records")
+            return df
+
+        except Exception as e:
+            logger.error(f"❌ Error fetching officers for {ticker}: {e}")
+            return None
+
+    def get_company_shareholders(self, ticker):
+        """
+        Lấy thông tin cổ đông
+
+        Args:
+            ticker: Mã cổ phiếu
+
+        Returns:
+            DataFrame hoặc None
+        """
+        try:
+            stock = Vnstock().stock(symbol=ticker, source=self.source)
+            df = stock.company.shareholders()
+
+            if df is None or df.empty:
+                logger.warning(f"No shareholders data for {ticker}")
+                return None
+
+            logger.info(f"✅ Fetched shareholders for {ticker}: {len(df)} records")
+            return df
+
+        except Exception as e:
+            logger.error(f"❌ Error fetching shareholders for {ticker}: {e}")
+            return None
+
