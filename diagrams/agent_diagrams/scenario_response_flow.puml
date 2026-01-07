@@ -1,0 +1,95 @@
+!pragma charset UTF-8
+@startuml scenario_response_flow
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+skinparam rectangle {
+    BackgroundColor<<normal>> #E8F5E9
+    BackgroundColor<<watch>> #FFF9C4
+    BackgroundColor<<emergency>> #FFCCBC
+    BackgroundColor<<crisis>> #FFCDD2
+    BackgroundColor<<action>> #B3E5FC
+    BorderColor #333333
+    FontSize 10
+}
+
+title Scenario Response Decision Flow
+
+start
+
+:Daily Monitoring;
+
+:Calculate MAPE\nCheck Volatility\nDetect News;
+
+if (MAPE < 1.5%\nAND\nVolatility normal?) then (yes)
+  #E8F5E9:PROTOCOL A\nNormal Operations;
+  :Weekly retrain\nHigh confidence 85%\nStandard intervals;
+  :No alerts;
+  stop
+
+else (no)
+  if (MAPE < 3%\nAND\nVolatility < 3x?) then (yes)
+    #FFF9C4:PROTOCOL B\nElevated Watch;
+    :Consider early retrain\nMedium confidence 70%\nWider intervals 1.5x;
+    :Low priority alert;
+    stop
+
+  else (no)
+    if (Single stock shock\nOR\nMAPE 3-10%?) then (yes)
+      #FFCCBC:PROTOCOL C\nEmergency Response;
+
+      partition "Emergency Actions" {
+        :Detect shock type\n(News/Limits);
+
+        if (Consecutive limits?) then (yes)
+          :DISABLE model;
+          :Use momentum fallback;
+          :Wait 2 days;
+        else (no)
+          :Trigger emergency retrain\n(1-2 hours);
+          :Interim adjustment;
+        endif
+
+        :Low confidence 50%;
+        :Wide intervals 2x;
+        :High priority alert;
+      }
+      stop
+
+    else (no)
+      #FFCDD2:PROTOCOL D\nCrisis Mode;
+
+      partition "Crisis Management" {
+        :Detect market crash\n(VN-Index -10%+);
+
+        :ACTIVATE CRISIS MODE;
+
+        :Emergency retrain\nALL stocks;
+
+        :Daily retrain schedule;
+
+        :Add market sentiment;
+
+        :Very low confidence 30%;
+
+        :Very wide intervals 3x;
+
+        :Critical alerts\n(all channels);
+
+        :Monitor for recovery;
+
+        if (Market stable\n5+ days?) then (yes)
+          :EXIT crisis mode;
+          :Gradual restore confidence;
+        else (no)
+          :Continue crisis ops;
+        endif
+      }
+      stop
+    endif
+  endif
+endif
+
+@enduml

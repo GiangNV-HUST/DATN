@@ -1,0 +1,84 @@
+!pragma charset UTF-8
+@startuml retraining_workflow
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+skinparam rectangle {
+    BackgroundColor<<daily>> #E3F2FD
+    BackgroundColor<<weekly>> #FFF9C4
+    BackgroundColor<<check>> #E1F5FE
+    BackgroundColor<<retrain>> #FFE0B2
+    BackgroundColor<<deploy>> #C8E6C9
+    BackgroundColor<<alert>> #FFCDD2
+    BorderColor #333333
+    FontSize 11
+}
+
+title Ensemble Model Retraining Workflow
+
+rectangle "MỖI NGÀY" as daily <<daily>> {
+    rectangle "2h sáng:\nThu thập data mới\nfrom vnstock" as collect
+    rectangle "3h sáng:\nLưu vào database" as save_db
+    rectangle "Model hiện tại\nđưa ra predictions" as predict
+}
+
+rectangle "MỖI TUẦN (Thứ 2)" as weekly <<weekly>> {
+    rectangle "Bước 1:\nCheck models\ncần retrain" as check <<check>>
+    rectangle "Bước 2:\nFetch 1500 ngày\ndata mới nhất" as fetch <<check>>
+    rectangle "Bước 3:\nRetrain models" as retrain <<retrain>>
+    rectangle "Bước 4:\nSo sánh\nOld vs New" as compare <<retrain>>
+
+    rectangle "Deploy?" as decision <<deploy>>
+    rectangle "Deploy\nmodel mới" as deploy_yes <<deploy>>
+    rectangle "Giữ\nmodel cũ" as deploy_no <<alert>>
+
+    rectangle "Gửi báo cáo\n(Discord/Email)" as notify <<alert>>
+}
+
+collect --> save_db
+save_db --> predict
+predict --> collect : "Lặp lại\nmỗi ngày"
+
+check --> fetch : "Found models\nto retrain"
+fetch --> retrain : "Data ready"
+retrain --> compare : "Training done"
+
+compare --> decision
+decision --> deploy_yes : "New MAPE\n< Old MAPE"
+decision --> deploy_no : "New MAPE\n>= Old MAPE"
+
+deploy_yes --> notify
+deploy_no --> notify
+
+notify --> check : "Tuần sau"
+
+note right of daily
+  **Hàng ngày:**
+  - Data mới: +1 ngày
+  - Model cũ: sử dụng
+  - Chưa retrain
+end note
+
+note right of check
+  **Điều kiện retrain:**
+  Model > 7 ngày tuổi
+  → Cần update
+end note
+
+note right of compare
+  **So sánh:**
+  - Old MAPE: 0.95%
+  - New MAPE: 0.87%
+  - Improvement: +8.4%
+  → Deploy ✅
+end note
+
+note right of deploy_no
+  **Backup:**
+  Model mới save as
+  "candidate", không deploy
+end note
+
+@enduml

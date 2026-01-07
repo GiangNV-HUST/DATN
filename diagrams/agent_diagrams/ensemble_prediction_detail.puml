@@ -1,0 +1,78 @@
+!pragma charset UTF-8
+@startuml ensemble_prediction_detail
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+skinparam rectangle {
+    BackgroundColor<<user>> #E8E8FF
+    BackgroundColor<<agent>> #FFD6D6
+    BackgroundColor<<mcp>> #E1F5FE
+    BackgroundColor<<service>> #FFF9C4
+    BackgroundColor<<ensemble>> #FFE0B2
+    BackgroundColor<<model>> #C8E6C9
+    BackgroundColor<<meta>> #D1C4E9
+    BackgroundColor<<output>> #F0E6FF
+    BorderColor #333333
+    FontSize 11
+}
+
+rectangle "User's query:\nPhân tích giá VCB" as query <<user>>
+rectangle "AnalysisSpecialist\nAgent" as agent <<agent>>
+rectangle "MCP Server:\nget_stock_price\n_prediction" as mcp <<mcp>>
+rectangle "PredictionService" as service <<service>>
+rectangle "EnsembleStacking" as ensemble <<ensemble>>
+
+rectangle "Level 1: Base Models" as level1 <<model>> {
+    rectangle "PatchTST\nTransformer" as patchtst
+    rectangle "LightGBM\nGradient Boost" as lgb
+    rectangle "LSTM+Attention\nDeep Learning" as lstm
+    rectangle "Prophet\nStatistical" as prophet
+    rectangle "XGBoost\nGradient Boost" as xgb
+}
+
+rectangle "Level 2: Meta-Model" as level2 <<meta>> {
+    rectangle "MLPRegressor\nNeural Network\n(64→32)" as meta
+}
+
+rectangle "Prediction Result" as output <<output>>
+
+query --> agent : "1. User request"
+agent --> mcp : "2. Call MCP tool\nticker='VCB'\nhorizon='3day'"
+mcp --> service : "3. Load model\n& fetch data"
+service --> ensemble : "4. Predict"
+
+ensemble --> patchtst : "5a. Predict"
+ensemble --> lgb : "5b. Predict"
+ensemble --> lstm : "5c. Predict"
+ensemble --> prophet : "5d. Predict"
+ensemble --> xgb : "5e. Predict"
+
+patchtst --> meta : "pred1"
+lgb --> meta : "pred2"
+lstm --> meta : "pred3"
+prophet --> meta : "pred4"
+xgb --> meta : "pred5"
+
+meta --> output : "6. Final prediction\nwith confidence\ninterval"
+output --> mcp : "7. Return result"
+mcp --> agent : "8. Use in analysis"
+
+note right of level1
+  **5 Diverse Models:**
+  - PatchTST: Long patterns
+  - LightGBM: Non-linear
+  - LSTM: Sequential
+  - Prophet: Trends
+  - XGBoost: Complex
+end note
+
+note right of meta
+  **Meta-Model:**
+  Learns optimal weights
+  for each base model
+  MAPE: 0.8-1.2% (3-day)
+end note
+
+@enduml
