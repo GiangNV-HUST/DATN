@@ -1,0 +1,74 @@
+!pragma charset UTF-8
+@startuml general_agent_multi_model
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+skinparam rectangle {
+    BackgroundColor<<user>> #E8E8FF
+    BackgroundColor<<router>> #FFECB3
+    BackgroundColor<<agent>> #FFD6D6
+    BackgroundColor<<model>> #E1F5FE
+    BackgroundColor<<mcp>> #D4E6F1
+    BackgroundColor<<tool>> #D4F1D4
+    BackgroundColor<<output>> #F0E6FF
+    BorderColor #333333
+    FontSize 11
+}
+
+rectangle "User's query" as query <<user>>
+rectangle "Root_agent" as root <<router>>
+rectangle "general_agent" as general <<agent>>
+
+rectangle "Task Classifier" as selector <<router>>
+
+rectangle "Gemini 2.0 Flash" as gemini_flash <<model>>
+rectangle "Claude Sonnet 4.5" as claude_sonnet <<model>>
+
+rectangle "MCP Server" as mcp <<mcp>>
+rectangle "Output" as output <<output>>
+
+rectangle "get_stock_price" as price <<tool>>
+rectangle "get_stock_info" as info <<tool>>
+rectangle "search_stocks" as search <<tool>>
+rectangle "analyze_stock\n_technical" as technical <<tool>>
+
+query --> root
+root --> general : "routing"
+
+general --> selector : "Phân loại nhiệm vụ"
+
+selector --> gemini_flash : "DATA_QUERY/CONVERSATION\n(Nhiệm vụ chính)"
+selector --> claude_sonnet : "ANALYSIS\n(Phân tích phức tạp)"
+
+gemini_flash --> mcp : "Gọi MCP tools"
+claude_sonnet --> mcp : "Gọi MCP tools"
+
+mcp -.-> price : "Gemini Flash\n(Giá cổ phiếu)"
+mcp -.-> info : "Gemini Flash\n(Thông tin cổ phiếu)"
+mcp -.-> search : "Gemini Flash\n(Tìm kiếm)"
+mcp -.-> technical : "Claude Sonnet 4.5\n(Phân tích kỹ thuật)"
+
+price --> output
+info --> output
+search --> output
+technical --> output
+
+general --> output
+
+note right of gemini_flash
+  Gemini 2.0 Flash - DATA_QUERY
+  - Truy vấn giá, thông tin
+  - Tìm kiếm đơn giản
+  - Hội thoại chung
+  Ultra fast, ultra cheap
+end note
+
+note right of claude_sonnet
+  Claude Sonnet 4.5 - ANALYSIS
+  - Phân tích kỹ thuật
+  Best reasoning for analysis
+end note
+
+@enduml

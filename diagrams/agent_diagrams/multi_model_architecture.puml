@@ -1,0 +1,85 @@
+!pragma charset UTF-8
+@startuml multi_model_architecture
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+
+skinparam rectangle {
+    BackgroundColor<<agent>> #FFD6D6
+    BackgroundColor<<model>> #E1F5FE
+    BackgroundColor<<router>> #FFECB3
+    BackgroundColor<<task>> #D4F1D4
+    BorderColor #333333
+    FontSize 11
+}
+
+skinparam cloud {
+    BackgroundColor #FFF9C4
+    BorderColor #333333
+}
+
+rectangle "User Query" as query <<task>>
+rectangle "Root Agent" as root <<router>>
+
+cloud "Model Router" as router {
+    rectangle "Task Classifier" as analyzer <<task>>
+}
+
+rectangle "Gemini 2.0 Flash" as gemini_flash <<model>>
+rectangle "Claude Sonnet 4.5" as claude_sonnet <<model>>
+rectangle "Claude Opus 4.5" as claude_opus <<model>>
+rectangle "GPT-4o" as gpt <<model>>
+
+rectangle "General Agent" as general <<agent>>
+rectangle "Screener Specialist" as screener <<agent>>
+rectangle "Analysis Specialist" as analysis <<agent>>
+rectangle "Discovery Specialist" as discovery <<agent>>
+rectangle "Investment Planner" as investment <<agent>>
+
+query --> root
+root --> router
+
+router --> analyzer
+
+analyzer --> gemini_flash : "DATA_QUERY, CRUD\n(đơn giản nhất)"
+analyzer --> claude_sonnet : "SCREENING, ANALYSIS\n(sàng lọc & phân tích)"
+analyzer --> claude_opus : "DISCOVERY\n(khám phá - phức tạp nhất)"
+analyzer --> gpt : "ADVISORY\n(tư vấn)"
+
+gemini_flash --> general
+claude_sonnet --> screener
+claude_sonnet --> analysis
+claude_opus --> discovery
+gpt --> investment
+
+note right of gemini_flash
+  Gemini 2.0 Flash
+  - Ultra fast, ultra cheap
+  - Truy vấn đơn giản, CRUD
+  - Conversation
+end note
+
+note right of claude_sonnet
+  Claude Sonnet 4.5
+  - Best reasoning
+  - Sàng lọc & phân tích
+  - Screening + Analysis
+end note
+
+note right of claude_opus
+  Claude Opus 4.5
+  - Most powerful
+  - Khám phá cổ phiếu
+  - Deepest analysis
+end note
+
+note right of gpt
+  GPT-4o
+  - Creative intelligence
+  - Tư vấn đầu tư
+  - Advisory planning
+end note
+
+@enduml

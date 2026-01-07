@@ -1,0 +1,77 @@
+!pragma charset UTF-8
+@startuml discovery_specialist_multi_model
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+skinparam rectangle {
+    BackgroundColor<<user>> #E8E8FF
+    BackgroundColor<<router>> #FFECB3
+    BackgroundColor<<agent>> #FFD6D6
+    BackgroundColor<<model>> #E1F5FE
+    BackgroundColor<<mcp>> #D4E6F1
+    BackgroundColor<<tool>> #D4F1D4
+    BackgroundColor<<output>> #F0E6FF
+    BorderColor #333333
+    FontSize 11
+}
+
+rectangle "User's query" as query <<user>>
+rectangle "Root_agent" as root <<router>>
+rectangle "discovery_specialist" as discovery <<agent>>
+
+rectangle "Task Classifier" as selector <<router>>
+
+rectangle "Claude Opus 4.5" as claude_opus <<model>>
+rectangle "Gemini 2.0 Flash" as gemini_flash <<model>>
+
+rectangle "MCP Server" as mcp <<mcp>>
+rectangle "Output" as output <<output>>
+
+rectangle "discover_stocks" as discover <<tool>>
+rectangle "search_stocks\n_by_sector" as search <<tool>>
+rectangle "search_tcbs" as tcbs <<tool>>
+rectangle "search_gemini" as gemini <<tool>>
+rectangle "get_stock_data" as stock_data <<tool>>
+
+query --> root
+root --> discovery : "routing"
+
+discovery --> selector : "Phân loại nhiệm vụ"
+
+selector --> claude_opus : "DISCOVERY\n(Nhiệm vụ chính)"
+selector --> gemini_flash : "DATA_QUERY\n(Truy vấn dữ liệu)"
+
+claude_opus --> mcp : "Gọi MCP tools"
+gemini_flash --> mcp : "Gọi MCP tools"
+
+mcp -.-> discover : "Claude Opus 4.5\n(Khám phá cổ phiếu)"
+mcp -.-> search : "Claude Opus 4.5\n(Tìm theo ngành)"
+mcp -.-> tcbs : "Claude Opus 4.5\n(Tìm kiếm TCBS)"
+mcp -.-> gemini : "Claude Opus 4.5\n(Tìm kiếm Gemini)"
+mcp -.-> stock_data : "Gemini Flash\n(Dữ liệu cổ phiếu)"
+
+discover --> output
+search --> output
+tcbs --> output
+gemini --> output
+stock_data --> output
+
+discovery --> output
+
+note right of claude_opus
+  Claude Opus 4.5 - DISCOVERY Task
+  - Khám phá cổ phiếu tiềm năng
+  - Tìm kiếm theo ngành
+  - Tìm kiếm đa nguồn
+  Most powerful, deepest analysis
+end note
+
+note right of gemini_flash
+  Gemini 2.0 Flash - DATA_QUERY
+  - Dữ liệu cổ phiếu
+  Ultra fast data retrieval
+end note
+
+@enduml

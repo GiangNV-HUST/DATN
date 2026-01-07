@@ -1,0 +1,94 @@
+!pragma charset UTF-8
+@startuml multi_model_fallback
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+skinparam rectangle {
+    BackgroundColor<<primary>> #E1F5FE
+    BackgroundColor<<fallback1>> #FFF9C4
+    BackgroundColor<<fallback2>> #FFECB3
+    BackgroundColor<<error>> #FFCDD2
+    BackgroundColor<<success>> #C8E6C9
+    BorderColor #333333
+    FontSize 11
+}
+
+skinparam arrow {
+    Color #333333
+    FontSize 10
+}
+
+rectangle "Task Classifier" as classifier <<success>>
+
+' DISCOVERY Task
+rectangle "DISCOVERY Task" as discovery_task {
+    rectangle "Claude Opus 4.5\n(Primary)" as opus_primary <<primary>>
+    rectangle "Claude Sonnet 4.5\n(Fallback 1)" as sonnet_fb1 <<fallback1>>
+    rectangle "GPT-4o\n(Fallback 2)" as gpt_fb1 <<fallback2>>
+    rectangle "Error" as error1 <<error>>
+
+    opus_primary -down-> sonnet_fb1 : "Có lỗi"
+    sonnet_fb1 -down-> gpt_fb1 : "Có lỗi"
+    gpt_fb1 -down-> error1 : "Có lỗi"
+}
+
+' ANALYSIS/SCREENING Task
+rectangle "ANALYSIS/SCREENING Task" as analysis_task {
+    rectangle "Claude Sonnet 4.5\n(Primary)" as sonnet_primary <<primary>>
+    rectangle "GPT-4o\n(Fallback 1)" as gpt_fb2 <<fallback1>>
+    rectangle "Claude Opus 4.5\n(Fallback 2)" as opus_fb1 <<fallback2>>
+    rectangle "Error" as error2 <<error>>
+
+    sonnet_primary -down-> gpt_fb2 : "Có lỗi"
+    gpt_fb2 -down-> opus_fb1 : "Có lỗi"
+    opus_fb1 -down-> error2 : "Có lỗi"
+}
+
+' ADVISORY Task
+rectangle "ADVISORY Task" as advisory_task {
+    rectangle "GPT-4o\n(Primary)" as gpt_primary <<primary>>
+    rectangle "Claude Sonnet 4.5\n(Fallback 1)" as sonnet_fb2 <<fallback1>>
+    rectangle "Claude Opus 4.5\n(Fallback 2)" as opus_fb2 <<fallback2>>
+    rectangle "Error" as error3 <<error>>
+
+    gpt_primary -down-> sonnet_fb2 : "Có lỗi"
+    sonnet_fb2 -down-> opus_fb2 : "Có lỗi"
+    opus_fb2 -down-> error3 : "Có lỗi"
+}
+
+' DATA_QUERY Task
+rectangle "DATA_QUERY/CRUD Task" as data_task {
+    rectangle "Gemini 2.0 Flash\n(Primary)" as gemini_primary <<primary>>
+    rectangle "Claude Sonnet 4.5\n(Fallback 1)" as sonnet_fb3 <<fallback1>>
+    rectangle "GPT-4o\n(Fallback 2)" as gpt_fb3 <<fallback2>>
+    rectangle "Error" as error4 <<error>>
+
+    gemini_primary -down-> sonnet_fb3 : "Có lỗi"
+    sonnet_fb3 -down-> gpt_fb3 : "Có lỗi"
+    gpt_fb3 -down-> error4 : "Có lỗi"
+}
+
+rectangle "Cache & Metrics" as cache <<success>>
+
+classifier --> discovery_task
+classifier --> analysis_task
+classifier --> advisory_task
+classifier --> data_task
+
+discovery_task --> cache
+analysis_task --> cache
+advisory_task --> cache
+data_task --> cache
+
+note bottom of classifier
+  Các lỗi kích hoạt fallback:
+  - Rate limit exceeded (429)
+  - API timeout
+  - Model unavailable (503)
+  - Invalid response
+  - Network errors
+end note
+
+@enduml

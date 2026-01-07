@@ -1,0 +1,45 @@
+!pragma charset UTF-8
+@startuml alert_agent_detail
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+
+skinparam rectangle {
+    BackgroundColor<<user>> #E8E8FF
+    BackgroundColor<<router>> #FFECB3
+    BackgroundColor<<agent>> #FFD6D6
+    BackgroundColor<<mcp>> #E1F5FE
+    BackgroundColor<<tool>> #D4F1D4
+    BackgroundColor<<output>> #F0E6FF
+    BorderColor #333333
+    FontSize 11
+}
+
+rectangle "User's query" as query <<user>>
+rectangle "Root_agent" as root <<router>>
+rectangle "alert_agent" as alert <<agent>>
+rectangle "MCP Server" as mcp <<mcp>>
+rectangle "Output" as output <<output>>
+
+rectangle "create_alert" as create <<tool>>
+rectangle "get_user_alerts" as get <<tool>>
+rectangle "delete_alert" as delete <<tool>>
+
+query --> root
+root --> alert : "routing"
+
+alert --> mcp : "Gọi MCP tools"
+
+mcp -.-> create
+mcp -.-> get
+mcp -.-> delete
+
+create --> output
+get --> output
+delete --> output
+
+alert --> output
+
+@enduml

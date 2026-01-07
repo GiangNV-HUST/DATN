@@ -26,26 +26,23 @@ class TaskBasedModelSelector:
     Phân loại query → chọn model tối ưu cho task type
     """
 
-    # Task → Model mapping
+    # Task → Model mapping (4 models)
     TASK_MODEL_MAP = {
-        TaskType.DATA_QUERY: "gemini-flash",      # Simple, fast, cheap
-        TaskType.SCREENING: "gemini-pro",         # Medium complexity, structured
-        TaskType.ANALYSIS: "claude-sonnet",       # Complex reasoning
-        TaskType.ADVISORY: "gpt-4o",              # Creative planning
-        TaskType.DISCOVERY: "claude-sonnet",      # NL understanding + ranking
-        TaskType.CRUD: "gemini-flash",            # Simple operations
-        TaskType.CONVERSATION: "gemini-flash"     # General chat
+        TaskType.DATA_QUERY: "gemini-flash",      # Simple, fast, cheap (Gemini 2.0 Flash)
+        TaskType.SCREENING: "claude-sonnet",      # Medium-high complexity (Claude Sonnet 4.5)
+        TaskType.ANALYSIS: "claude-sonnet",       # Complex reasoning (Claude Sonnet 4.5)
+        TaskType.ADVISORY: "gpt-4o",              # Creative planning (GPT-4o)
+        TaskType.DISCOVERY: "claude-opus",        # Most complex, deep analysis (Claude Opus 4.5)
+        TaskType.CRUD: "gemini-flash",            # Simple operations (Gemini 2.0 Flash)
+        TaskType.CONVERSATION: "gemini-flash"     # General chat (Gemini 2.0 Flash)
     }
 
-    # Model costs (per 1M tokens)
+    # Model costs (per 1M tokens) - Updated for 2025 (4 models)
     MODEL_COSTS = {
-        "gemini-flash": {"input": 0.000075, "output": 0.0003},
-        "gemini-pro": {"input": 0.00035, "output": 0.00105},
-        "claude-haiku": {"input": 0.00025, "output": 0.00125},
-        "claude-sonnet": {"input": 0.003, "output": 0.015},
-        "claude-opus": {"input": 0.015, "output": 0.075},
-        "gpt-4o": {"input": 0.0025, "output": 0.01},
-        "gpt-4-turbo": {"input": 0.01, "output": 0.03}
+        "gemini-flash": {"input": 0.000075, "output": 0.0003},      # Gemini 2.0 Flash
+        "claude-sonnet": {"input": 0.003, "output": 0.015},         # Claude Sonnet 4.5
+        "claude-opus": {"input": 0.015, "output": 0.075},           # Claude Opus 4.5
+        "gpt-4o": {"input": 0.0025, "output": 0.01}                 # GPT-4o
     }
 
     # Classification keywords for quick matching

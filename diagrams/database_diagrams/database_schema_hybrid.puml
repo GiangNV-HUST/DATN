@@ -1,0 +1,422 @@
+@startuml database_schema_hybrid
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam shadowing false
+skinparam linetype ortho
+
+' ===================================================
+' DATABASE SCHEMA - HYBRID MULTI-MODEL SYSTEM
+' Hệ thống giao dịch chứng khoán với AI đa mô hình
+' ===================================================
+
+!define TABLE(name) class name << (T,#FFAAAA) >>
+!define PK(x) <b><color:#b8861b><&key></color> x</b>
+!define FK(x) <color:#aaaaaa><&key></color> x
+!define UNIQUE(x) <color:#green><&brush></color> x
+
+' ===================================================
+' STOCK DATA TABLES (TimescaleDB Hypertables)
+' ===================================================
+
+package "Stock Data (TimescaleDB Hypertables)" #E8F5E9 {
+  TABLE(information) {
+    PK(ticker) VARCHAR(20)
+    --
+    exchange TEXT
+    company_name TEXT
+    company_profile TEXT
+    industry TEXT
+    no_shareholders INT
+    foreign_percent DOUBLE
+    established_year INT
+    no_employees INT
+    website TEXT
+    history_dev TEXT
+    company_promise TEXT
+    business_risk TEXT
+    key_developments TEXT
+    business_strategies TEXT
+  }
+
+  TABLE(stock_prices_1m) {
+    PK(time) TIMESTAMPTZ
+    PK(ticker) VARCHAR(20)
+    --
+    open DOUBLE
+    high DOUBLE
+    low DOUBLE
+    close DOUBLE
+    volume BIGINT
+    --
+    <i>⏰ Hypertable</i>
+  }
+
+  TABLE(stock_prices_1d) {
+    PK(time) DATE
+    PK(ticker) VARCHAR(20)
+    --
+    open, high, low, close DOUBLE
+    volume DOUBLE
+    avg_volume_5/10/20 DOUBLE
+    ma5/10/20/50/100 DOUBLE
+    bb_upper/middle/lower DOUBLE
+    rsi DOUBLE
+    macd_main/signal/diff DOUBLE
+    --
+    <i>⏰ Hypertable</i>
+  }
+
+  TABLE(stock_prices_3d_predict) {
+    PK(time) DATE
+    PK(ticker) VARCHAR(20)
+    --
+    close_next_1 FLOAT8
+    close_next_2 FLOAT8
+    close_next_3 FLOAT8
+    --
+    <i>⏰ Hypertable</i>
+  }
+
+  TABLE(stock_prices_48d_predict) {
+    PK(time) DATE
+    PK(ticker) VARCHAR(20)
+    --
+    close_next_1..48 FLOAT8
+    --
+    <i>⏰ Hypertable</i>
+  }
+}
+
+' ===================================================
+' FINANCIAL DATA TABLES
+' ===================================================
+
+package "Financial Data" #FFF3E0 {
+  TABLE(balance_sheet) {
+    PK(ticker) VARCHAR(20)
+    PK(year) INT
+    PK(quarter) INT
+    --
+    accounts_receivable NUMERIC
+    advances_from_customers NUMERIC
+    available_for_sale_securities NUMERIC
+    balance_sheet_in_day NUMERIC
+    budget_source_and_other_fund NUMERIC
+    current_assets NUMERIC
+    cash_and_cash_equivalents NUMERIC
+    ...
+  }
+
+  TABLE(cash_flow) {
+    PK(ticker) VARCHAR(20)
+    PK(year) INT
+    PK(quarter) INT
+    --
+    business_income_tax_paid NUMERIC
+    cash_and_cash_equivalents_at_end NUMERIC
+    cash_flows_from_financial_activities NUMERIC
+    collection_of_loans_proceeds NUMERIC
+    depreciation_and_amortisation NUMERIC
+    dividends_paid NUMERIC
+    ...
+  }
+
+  TABLE(income_statement) {
+    PK(ticker) VARCHAR(20)
+    PK(year) INT
+    PK(quarter) INT
+    --
+    attribute_to_parent_company NUMERIC
+    attribute_to_parent_company_bm NUMERIC
+    business_income_tax_current NUMERIC
+    business_income_tax_deferred NUMERIC
+    cost_of_sales NUMERIC
+    eps_basic NUMERIC
+    ...
+  }
+
+  TABLE(ratio) {
+    PK(ticker) VARCHAR(20)
+    PK(year) INT
+    PK(quarter) INT
+    --
+    dilutionearnings_equity NUMERIC
+    facevalue_equity NUMERIC
+    gross_margin NUMERIC
+    net_profit_margin NUMERIC
+    roe NUMERIC
+    roa NUMERIC
+    pe NUMERIC
+    pb NUMERIC
+    eps NUMERIC
+    ...
+  }
+}
+
+' ===================================================
+' USER INTERACTION TABLES
+' ===================================================
+
+package "User Interaction" #E1F5FE {
+  TABLE(alert) {
+    PK(id) SERIAL
+    --
+    FK(user_id) VARCHAR(255)
+    FK(ticker) VARCHAR(20)
+    alert_type VARCHAR(50)
+    condition VARCHAR(10)
+    value DECIMAL(15,2)
+    is_active BOOLEAN
+    created_at TIMESTAMPTZ
+    updated_at TIMESTAMPTZ
+    triggered_at TIMESTAMPTZ
+    user_name VARCHAR(255)
+  }
+
+  TABLE(technical_alerts) {
+    PK(id) SERIAL
+    --
+    FK(ticker) VARCHAR(20)
+    alert_type VARCHAR(50)
+    alert_level VARCHAR(20)
+    message TEXT
+    indicator_value DOUBLE
+    price_at_alert DOUBLE
+    created_at TIMESTAMPTZ
+    is_active BOOLEAN
+  }
+
+  TABLE(subscribe) {
+    PK(id) SERIAL
+    --
+    UNIQUE(user_id, ticker)
+    FK(user_id) INT8
+    FK(ticker) VARCHAR(20)
+    create_at TIMESTAMPTZ
+    user_name VARCHAR(255)
+  }
+}
+
+' ===================================================
+' HYBRID SYSTEM TABLES (NEW)
+' ===================================================
+
+package "Hybrid Multi-Model System 🆕" #F3E5F5 {
+  TABLE(sessions) {
+    PK(session_id) VARCHAR(255)
+    --
+    user_id VARCHAR(255)
+    user_name VARCHAR(255)
+    authenticated BOOLEAN
+    created_at TIMESTAMPTZ
+    expires_at TIMESTAMPTZ
+    last_active TIMESTAMPTZ
+    metadata JSONB
+    --
+    <i>🔐 UC1: Authentication</i>
+  }
+
+  TABLE(user_preferences) {
+    PK(user_id) VARCHAR(255)
+    --
+    user_name VARCHAR(255)
+    risk_tolerance VARCHAR(20)
+    investment_horizon VARCHAR(20)
+    capital DECIMAL(18,2)
+    preferred_sectors TEXT[]
+    excluded_sectors TEXT[]
+    max_single_stock_allocation DECIMAL(5,2)
+    enable_ai_suggestions BOOLEAN
+    created_at TIMESTAMPTZ
+    updated_at TIMESTAMPTZ
+    --
+    <i>💼 UC8: Investment Advisory</i>
+  }
+
+  TABLE(ai_usage_logs) {
+    PK(id) SERIAL
+    --
+    user_id VARCHAR(255)
+    user_name VARCHAR(255)
+    use_case VARCHAR(50)
+    agent_name VARCHAR(50)
+    model_name VARCHAR(50)
+    task_description TEXT
+    input_tokens INT
+    output_tokens INT
+    cost_usd DECIMAL(10,6)
+    execution_time_ms INT
+    success BOOLEAN
+    error_message TEXT
+    created_at TIMESTAMPTZ
+    --
+    <i>🤖 UC6/8/9: Multi-Model Tracking</i>
+  }
+
+  TABLE(portfolios) {
+    PK(id) SERIAL
+    --
+    FK(user_id) VARCHAR(255)
+    user_name VARCHAR(255)
+    name VARCHAR(255)
+    description TEXT
+    tickers TEXT[]
+    allocations DECIMAL(5,2)[]
+    total_value DECIMAL(18,2)
+    risk_level VARCHAR(20)
+    expected_return DECIMAL(5,2)
+    expected_volatility DECIMAL(5,2)
+    created_by_ai_model VARCHAR(50)
+    ai_reasoning TEXT
+    is_active BOOLEAN
+    created_at TIMESTAMPTZ
+    updated_at TIMESTAMPTZ
+    --
+    <i>📊 UC8: Portfolio History</i>
+  }
+
+  TABLE(query_cache) {
+    PK(cache_key) VARCHAR(255)
+    --
+    query_type VARCHAR(50)
+    cached_data JSONB
+    created_at TIMESTAMPTZ
+    expires_at TIMESTAMPTZ
+    hit_count INT
+    last_accessed TIMESTAMPTZ
+    --
+    <i>⚡ UC1/4/5/7: Performance Cache</i>
+  }
+}
+
+' ===================================================
+' MATERIALIZED VIEWS
+' ===================================================
+
+package "Analytics Views" #FFF9C4 {
+  class ai_usage_stats << (V,#AAFFAA) >> {
+    use_case VARCHAR
+    model_name VARCHAR
+    --
+    total_calls BIGINT
+    total_input_tokens BIGINT
+    total_output_tokens BIGINT
+    total_cost DECIMAL
+    avg_cost_per_call DECIMAL
+    avg_execution_time_ms NUMERIC
+    success_rate FLOAT
+    --
+    <i>📈 Materialized View</i>
+  }
+
+  class cache_performance << (V,#AAFFAA) >> {
+    query_type VARCHAR
+    hour TIMESTAMP
+    --
+    cache_entries_created BIGINT
+    total_hits BIGINT
+    avg_hits_per_entry NUMERIC
+    avg_ttl_seconds NUMERIC
+    --
+    <i>📈 Materialized View</i>
+  }
+}
+
+' ===================================================
+' RELATIONSHIPS
+' ===================================================
+
+' Stock data relationships
+information "1" -- "0..*" stock_prices_1m : has >
+information "1" -- "0..*" stock_prices_1d : has >
+information "1" -- "0..*" stock_prices_3d_predict : has >
+information "1" -- "0..*" stock_prices_48d_predict : has >
+
+' Financial data relationships
+information "1" -- "0..*" balance_sheet : has >
+information "1" -- "0..*" cash_flow : has >
+information "1" -- "0..*" income_statement : has >
+information "1" -- "0..*" ratio : has >
+
+' User interaction relationships
+information "1" -- "0..*" alert : monitors >
+information "1" -- "0..*" technical_alerts : triggers >
+information "1" -- "0..*" subscribe : tracked by >
+
+' Hybrid system relationships
+user_preferences "1" -- "0..*" portfolios : creates >
+user_preferences "1" -- "0..*" ai_usage_logs : uses AI >
+sessions "1" -- "0..*" ai_usage_logs : during session >
+
+' Materialized view sources
+ai_usage_logs "0..*" ..> ai_usage_stats : aggregates
+query_cache "0..*" ..> cache_performance : aggregates
+
+' ===================================================
+' NOTES
+' ===================================================
+
+note right of sessions
+  **NEW in Hybrid System**
+  --
+  Quản lý session cho
+  Discord bot authentication
+
+  TTL: 300s (5 phút)
+  Cache enabled
+end note
+
+note right of ai_usage_logs
+  **Critical for Multi-Model**
+  --
+  Track chi phí & performance:
+  • Gemini Flash/Pro
+  • Claude Sonnet/Opus
+  • GPT-4o/mini
+
+  UC6: $0.0379
+  UC8: $0.1326
+  UC9: $0.040
+end note
+
+note right of query_cache
+  **Performance Optimization**
+  --
+  Persistent cache for:
+  • Screening queries (10 min)
+  • Price data (60s)
+  • Chart data (120s)
+  • Session data (300s)
+
+  Giảm 60-80% DB queries
+end note
+
+note bottom of user_preferences
+  **Personalization Engine**
+  --
+  Support UC8:
+  • Risk tolerance
+  • Investment horizon
+  • Capital & sectors
+  • Max allocation
+end note
+
+' ===================================================
+' LEGEND
+' ===================================================
+
+legend right
+  |= Symbol |= Meaning |
+  | PK | Primary Key |
+  | FK | Foreign Key |
+  | UNIQUE | Unique Constraint |
+  | ⏰ Hypertable | TimescaleDB Time-series Table |
+  | 🆕 | New in Hybrid System |
+  | 📈 | Materialized View |
+
+  **Total Tables:** 19 tables + 2 views
+  **New Tables:** 5 (sessions, user_preferences, ai_usage_logs, portfolios, query_cache)
+  **Hypertables:** 4 (price data with time-series optimization)
+endlegend
+
+@enduml

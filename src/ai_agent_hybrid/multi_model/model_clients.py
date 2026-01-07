@@ -1,6 +1,6 @@
 """
 Multi-Model Clients
-Unified interface cho các AI models: Gemini, Claude, GPT-4
+Unified interface cho các AI models: Gemini 2.0 Flash, Claude Sonnet 4.5, Claude Opus 4.5, GPT-4o
 """
 
 from abc import ABC, abstractmethod
@@ -82,13 +82,13 @@ class BaseModelClient(ABC):
 
 class GeminiFlashClient(BaseModelClient):
     """
-    Google Gemini Flash 1.5
-    - Ultra fast, ultra cheap
-    - Best for: Simple queries, CRUD, classification
+    Google Gemini 2.0 Flash
+    - Ultra fast, ultra cheap, next generation
+    - Best for: Simple queries, CRUD, classification, conversation
     """
 
     def __init__(self, api_key: Optional[str] = None):
-        super().__init__("gemini-1.5-flash", api_key)
+        super().__init__("gemini-2.0-flash-exp", api_key)
 
     def _get_api_key(self) -> str:
         return os.getenv("GEMINI_API_KEY", "")
@@ -259,13 +259,13 @@ class GeminiProClient(BaseModelClient):
 
 class ClaudeSonnetClient(BaseModelClient):
     """
-    Anthropic Claude 3.5 Sonnet
+    Anthropic Claude Sonnet 4.5
     - Best reasoning, context window 200k
-    - Best for: Analysis, complex reasoning, discovery
+    - Best for: Analysis, screening, complex reasoning
     """
 
     def __init__(self, api_key: Optional[str] = None):
-        super().__init__("claude-3-5-sonnet-20241022", api_key)
+        super().__init__("claude-sonnet-4-5-20250514", api_key)
 
     def _get_api_key(self) -> str:
         return os.getenv("ANTHROPIC_API_KEY", "")
@@ -331,6 +331,95 @@ class ClaudeSonnetClient(BaseModelClient):
         message = await client.messages.create(
             model=self.model_name,
             max_tokens=2000,
+            tools=tools,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        return ModelResponse(
+            content=message.content[0].text if message.content else "",
+            model=self.model_name,
+            input_tokens=message.usage.input_tokens,
+            output_tokens=message.usage.output_tokens,
+            metadata={"tool_use": message.stop_reason == "tool_use"}
+        )
+
+
+class ClaudeOpusClient(BaseModelClient):
+    """
+    Anthropic Claude Opus 4.5
+    - Most powerful model, best reasoning and intelligence
+    - Best for: Discovery, most complex tasks, deep analysis
+    """
+
+    def __init__(self, api_key: Optional[str] = None):
+        super().__init__("claude-opus-4-5-20251101", api_key)
+
+    def _get_api_key(self) -> str:
+        return os.getenv("ANTHROPIC_API_KEY", "")
+
+    async def generate(
+        self,
+        prompt: str,
+        temperature: float = 0.7,
+        max_tokens: int = 4000,
+        **kwargs
+    ) -> ModelResponse:
+        """Generate với Claude Opus 4.5"""
+        from anthropic import AsyncAnthropic
+        import time
+
+        client = AsyncAnthropic(api_key=self.api_key)
+
+        start_time = time.time()
+
+        message = await client.messages.create(
+            model=self.model_name,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            **kwargs
+        )
+
+        latency = (time.time() - start_time) * 1000
+
+        content = message.content[0].text
+
+        # Token counting from response
+        input_tokens = message.usage.input_tokens
+        output_tokens = message.usage.output_tokens
+
+        # Cost for Opus 4.5 (per 1M tokens)
+        input_cost = (input_tokens / 1_000_000) * 0.015
+        output_cost = (output_tokens / 1_000_000) * 0.075
+        total_cost = input_cost + output_cost
+
+        return ModelResponse(
+            content=content,
+            model=self.model_name,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost=total_cost,
+            latency_ms=latency
+        )
+
+    async def generate_with_tools(
+        self,
+        prompt: str,
+        tools: List[Dict],
+        **kwargs
+    ) -> ModelResponse:
+        """Claude Opus 4.5 tool use"""
+        from anthropic import AsyncAnthropic
+
+        client = AsyncAnthropic(api_key=self.api_key)
+
+        message = await client.messages.create(
+            model=self.model_name,
+            max_tokens=4000,
             tools=tools,
             messages=[
                 {"role": "user", "content": prompt}
@@ -452,7 +541,7 @@ class ModelClientFactory:
         Get or create model client
 
         Args:
-            model_name: Model name (gemini-flash, gemini-pro, claude-sonnet, gpt-4o)
+            model_name: Model name (gemini-flash, claude-sonnet, claude-opus, gpt-4o)
 
         Returns:
             BaseModelClient instance
@@ -461,13 +550,13 @@ class ModelClientFactory:
         if model_name in cls._clients:
             return cls._clients[model_name]
 
-        # Create new client
+        # Create new client (4 models)
         if model_name == "gemini-flash":
             client = GeminiFlashClient()
-        elif model_name == "gemini-pro":
-            client = GeminiProClient()
         elif model_name == "claude-sonnet":
             client = ClaudeSonnetClient()
+        elif model_name == "claude-opus":
+            client = ClaudeOpusClient()
         elif model_name == "gpt-4o":
             client = GPT4oClient()
         else:
@@ -493,7 +582,7 @@ if __name__ == "__main__":
 
         test_prompt = "What is the capital of Vietnam? Answer in one sentence."
 
-        models = ["gemini-flash", "gemini-pro", "claude-sonnet", "gpt-4o"]
+        models = ["gemini-flash", "claude-sonnet", "claude-opus", "gpt-4o"]
 
         for model_name in models:
             try:

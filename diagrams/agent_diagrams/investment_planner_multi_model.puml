@@ -1,0 +1,95 @@
+!pragma charset UTF-8
+@startuml investment_planner_multi_model
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+
+skinparam rectangle {
+    BackgroundColor<<user>> #E8E8FF
+    BackgroundColor<<router>> #FFECB3
+    BackgroundColor<<agent>> #FFD6D6
+    BackgroundColor<<model>> #E1F5FE
+    BackgroundColor<<mcp>> #D4E6F1
+    BackgroundColor<<tool>> #D4F1D4
+    BackgroundColor<<output>> #F0E6FF
+    BorderColor #333333
+    FontSize 11
+}
+
+rectangle "User's query" as query <<user>>
+rectangle "Root_agent" as root <<router>>
+rectangle "investment_planner" as planner <<agent>>
+
+rectangle "Task Classifier" as selector <<router>>
+
+rectangle "Gemini 2.0 Flash" as gemini_flash <<model>>
+rectangle "Claude Sonnet 4.5" as claude_sonnet <<model>>
+rectangle "GPT-4o" as gpt <<model>>
+
+rectangle "MCP Server" as mcp <<mcp>>
+rectangle "Output" as output <<output>>
+
+rectangle "gather_investment\n_profile" as profile <<tool>>
+rectangle "calculate_portfolio\n_allocation" as allocation <<tool>>
+rectangle "generate_entry\n_strategy" as entry <<tool>>
+rectangle "generate_risk\n_management_plan" as risk <<tool>>
+rectangle "generate_monitoring\n_plan" as monitoring <<tool>>
+rectangle "get_stock_data" as stock_data <<tool>>
+rectangle "get_financial_data" as financial <<tool>>
+
+query --> root
+root --> planner : "routing"
+
+planner --> selector : "Phân loại nhiệm vụ"
+
+selector --> gpt : "ADVISORY\n(Nhiệm vụ chính)"
+selector --> claude_sonnet : "ANALYSIS\n(Phân tích phức tạp)"
+selector --> gemini_flash : "DATA_QUERY\n(Truy vấn dữ liệu)"
+
+gpt --> mcp : "Gọi MCP tools"
+claude_sonnet --> mcp : "Gọi MCP tools"
+gemini_flash --> mcp : "Gọi MCP tools"
+
+mcp -.-> profile : "GPT-4o\n(Thu thập hồ sơ)"
+mcp -.-> allocation : "GPT-4o\n(Phân bổ danh mục)"
+mcp -.-> entry : "Claude 4.5\n(Chiến lược vào lệnh)"
+mcp -.-> risk : "GPT-4o\n(Quản lý rủi ro)"
+mcp -.-> monitoring : "Claude 4.5\n(Giám sát)"
+mcp -.-> stock_data : "Gemini Flash\n(Dữ liệu cổ phiếu)"
+mcp -.-> financial : "Gemini Flash\n(Dữ liệu tài chính)"
+
+profile --> output
+allocation --> output
+entry --> output
+risk --> output
+monitoring --> output
+stock_data --> output
+financial --> output
+
+planner --> output
+
+note right of gpt
+  GPT-4o - ADVISORY Task
+  - Thu thập hồ sơ đầu tư
+  - Phân bổ danh mục
+  - Quản lý rủi ro
+  Creative, advisory planning
+end note
+
+note right of claude_sonnet
+  Claude Sonnet 4.5 - ANALYSIS Task
+  - Chiến lược vào lệnh
+  - Kế hoạch giám sát
+  Best reasoning & analysis
+end note
+
+note right of gemini_flash
+  Gemini 2.0 Flash - DATA_QUERY
+  - Dữ liệu cổ phiếu
+  - Dữ liệu tài chính
+  Ultra fast data retrieval
+end note
+
+@enduml

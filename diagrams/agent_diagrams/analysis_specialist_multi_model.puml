@@ -1,0 +1,74 @@
+!pragma charset UTF-8
+@startuml analysis_specialist_multi_model
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+skinparam rectangle {
+    BackgroundColor<<user>> #E8E8FF
+    BackgroundColor<<router>> #FFECB3
+    BackgroundColor<<agent>> #FFD6D6
+    BackgroundColor<<model>> #E1F5FE
+    BackgroundColor<<mcp>> #D4E6F1
+    BackgroundColor<<tool>> #D4F1D4
+    BackgroundColor<<output>> #F0E6FF
+    BorderColor #333333
+    FontSize 11
+}
+
+rectangle "User's query" as query <<user>>
+rectangle "Root_agent" as root <<router>>
+rectangle "analysis_specialist" as analysis <<agent>>
+
+rectangle "Task Classifier" as selector <<router>>
+
+rectangle "Claude Sonnet 4.5" as claude_sonnet <<model>>
+rectangle "Gemini 2.0 Flash" as gemini_flash <<model>>
+
+rectangle "MCP Server" as mcp <<mcp>>
+rectangle "Output" as output <<output>>
+
+rectangle "analyze_stock\n_technical" as technical <<tool>>
+rectangle "analyze_stock\n_fundamental" as fundamental <<tool>>
+rectangle "compare_stocks" as compare <<tool>>
+rectangle "get_stock_data" as stock_data <<tool>>
+
+query --> root
+root --> analysis : "routing"
+
+analysis --> selector : "Phân loại nhiệm vụ"
+
+selector --> claude_sonnet : "ANALYSIS\n(Nhiệm vụ chính)"
+selector --> gemini_flash : "DATA_QUERY\n(Truy vấn dữ liệu)"
+
+claude_sonnet --> mcp : "Gọi MCP tools"
+gemini_flash --> mcp : "Gọi MCP tools"
+
+mcp -.-> technical : "Claude Sonnet 4.5\n(Phân tích kỹ thuật)"
+mcp -.-> fundamental : "Claude Sonnet 4.5\n(Phân tích cơ bản)"
+mcp -.-> compare : "Claude Sonnet 4.5\n(So sánh cổ phiếu)"
+mcp -.-> stock_data : "Gemini Flash\n(Dữ liệu cổ phiếu)"
+
+technical --> output
+fundamental --> output
+compare --> output
+stock_data --> output
+
+analysis --> output
+
+note right of claude_sonnet
+  Claude Sonnet 4.5 - ANALYSIS Task
+  - Phân tích kỹ thuật
+  - Phân tích cơ bản
+  - So sánh cổ phiếu
+  Best reasoning & analysis
+end note
+
+note right of gemini_flash
+  Gemini 2.0 Flash - DATA_QUERY
+  - Dữ liệu cổ phiếu
+  Ultra fast data retrieval
+end note
+
+@enduml

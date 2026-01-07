@@ -1,0 +1,54 @@
+!pragma charset UTF-8
+@startuml general_agent_detail
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+
+skinparam rectangle {
+    BackgroundColor<<user>> #E8E8FF
+    BackgroundColor<<router>> #FFECB3
+    BackgroundColor<<agent>> #FFD6D6
+    BackgroundColor<<mcp>> #E1F5FE
+    BackgroundColor<<tool>> #D4F1D4
+    BackgroundColor<<output>> #F0E6FF
+    BorderColor #333333
+    FontSize 11
+}
+
+rectangle "User's query" as query <<user>>
+rectangle "Root_agent" as root <<router>>
+rectangle "general_agent" as general <<agent>>
+rectangle "MCP Server" as mcp <<mcp>>
+rectangle "Output" as output <<output>>
+
+rectangle "Gemini API" as gemini <<tool>>
+rectangle "summarize_tool" as summarize <<tool>>
+rectangle "get_stock\n_price_prediction" as prediction <<tool>>
+rectangle "get_stock_data" as stock_data <<tool>>
+rectangle "get_financial_data" as financial <<tool>>
+rectangle "search_agent" as search <<tool>>
+
+query --> root
+root --> general : "routing"
+
+general --> mcp : "Gọi MCP tools"
+
+mcp -.-> gemini
+mcp -.-> summarize
+mcp -.-> prediction
+mcp -.-> stock_data
+mcp -.-> financial
+mcp -.-> search
+
+gemini --> output
+summarize --> output
+prediction --> output
+stock_data --> output
+financial --> output
+search --> output
+
+general --> output
+
+@enduml

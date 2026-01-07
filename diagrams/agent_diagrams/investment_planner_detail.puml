@@ -1,0 +1,57 @@
+!pragma charset UTF-8
+@startuml investment_planner_detail
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+
+skinparam rectangle {
+    BackgroundColor<<user>> #E8E8FF
+    BackgroundColor<<router>> #FFECB3
+    BackgroundColor<<agent>> #FFD6D6
+    BackgroundColor<<mcp>> #E1F5FE
+    BackgroundColor<<tool>> #D4F1D4
+    BackgroundColor<<output>> #F0E6FF
+    BorderColor #333333
+    FontSize 11
+}
+
+rectangle "User's query" as query <<user>>
+rectangle "Root_agent" as root <<router>>
+rectangle "investment_planner" as planner <<agent>>
+rectangle "MCP Server" as mcp <<mcp>>
+rectangle "Output" as output <<output>>
+
+rectangle "gather_investment\n_profile" as profile <<tool>>
+rectangle "calculate_portfolio\n_allocation" as allocation <<tool>>
+rectangle "generate_entry\n_strategy" as entry <<tool>>
+rectangle "generate_risk\n_management_plan" as risk <<tool>>
+rectangle "generate_monitoring\n_plan" as monitoring <<tool>>
+rectangle "get_stock_data" as stock_data <<tool>>
+rectangle "get_financial_data" as financial <<tool>>
+
+query --> root
+root --> planner : "routing"
+
+planner --> mcp : "Gọi MCP tools"
+
+mcp -.-> profile
+mcp -.-> allocation
+mcp -.-> entry
+mcp -.-> risk
+mcp -.-> monitoring
+mcp -.-> stock_data
+mcp -.-> financial
+
+profile --> output
+allocation --> output
+entry --> output
+risk --> output
+monitoring --> output
+stock_data --> output
+financial --> output
+
+planner --> output
+
+@enduml

@@ -1,0 +1,45 @@
+!pragma charset UTF-8
+@startuml subscription_agent_detail
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+
+skinparam rectangle {
+    BackgroundColor<<user>> #E8E8FF
+    BackgroundColor<<router>> #FFECB3
+    BackgroundColor<<agent>> #FFD6D6
+    BackgroundColor<<mcp>> #E1F5FE
+    BackgroundColor<<tool>> #D4F1D4
+    BackgroundColor<<output>> #F0E6FF
+    BorderColor #333333
+    FontSize 11
+}
+
+rectangle "User's query" as query <<user>>
+rectangle "Root_agent" as root <<router>>
+rectangle "subscription_agent" as subscription <<agent>>
+rectangle "MCP Server" as mcp <<mcp>>
+rectangle "Output" as output <<output>>
+
+rectangle "create_subscription" as create <<tool>>
+rectangle "get_user_subscriptions" as get <<tool>>
+rectangle "delete_subscription" as delete <<tool>>
+
+query --> root
+root --> subscription : "routing"
+
+subscription --> mcp : "Gọi MCP tools"
+
+mcp -.-> create
+mcp -.-> get
+mcp -.-> delete
+
+create --> output
+get --> output
+delete --> output
+
+subscription --> output
+
+@enduml

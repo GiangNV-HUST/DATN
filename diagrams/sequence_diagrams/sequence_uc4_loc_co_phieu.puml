@@ -1,0 +1,103 @@
+@startuml sequence_uc4_loc_co_phieu
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam sequenceMessageAlign center
+skinparam shadowing false
+
+actor User
+boundary "Discord Bot" as Bot
+control "Root Agent" as Root
+control "Screener Agent" as Screener
+entity "Task Classifier" as Classifier
+entity "Model Selector" as Selector
+participant "Gemini 2.0 Flash" as Flash
+participant "Claude Sonnet 4.5" as Claude
+entity "Usage Tracker" as Tracker
+participant "MCP Wrapper" as Wrapper
+participant "MCP Client" as Client
+participant "MCP Server" as Server
+participant "TCBS API" as TCBS
+database "Database" as DB
+
+User -> Bot: "Lọc cổ phiếu RSI<30, PE<15"
+activate Bot
+
+Bot -> Root: AI Router
+activate Root
+Root -> Root: Target: ScreenerSpecialist
+
+Root -> Screener: Route request
+activate Screener
+
+Screener -> Classifier: classify_task
+activate Classifier
+Classifier --> Screener: SCREENING task
+deactivate Classifier
+
+Screener -> Selector: get_models_for_task
+activate Selector
+Selector --> Screener: Claude + Flash
+deactivate Selector
+
+Screener -> Flash: Parse criteria
+activate Flash
+Flash --> Screener: Parsed
+deactivate Flash
+
+Screener -> Tracker: Track Flash
+activate Tracker
+deactivate Tracker
+
+Screener -> Wrapper: screen_stocks(conditions)
+activate Wrapper
+
+Wrapper -> Client: call_tool(screen_stocks)
+activate Client
+Client -> Client: Check cache: MISS
+
+Client -> Server: screen_stocks
+activate Server
+
+Server -> TCBS: POST /stock/screen
+activate TCBS
+TCBS --> Server: Stock list
+deactivate TCBS
+
+Server -> DB: SELECT with RSI filter
+activate DB
+DB --> Server: Technical data
+deactivate DB
+
+Server -> Server: Merge & filter
+
+Server --> Client: 18 stocks matched
+deactivate Server
+
+Client -> Client: Save to cache (10 min)
+
+Client --> Wrapper: Result
+deactivate Client
+
+Wrapper --> Screener: Stock list
+deactivate Wrapper
+
+Screener -> Claude: Analyze & rank results
+activate Claude
+Claude --> Screener: 18 stocks ranked
+deactivate Claude
+
+Screener -> Tracker: Track Claude
+activate Tracker
+Tracker --> Screener: Complete
+deactivate Tracker
+
+Screener --> Root: Formatted result
+deactivate Screener
+
+Root --> Bot: Response
+deactivate Root
+
+Bot --> User: 📊 Tìm thấy 18 mã thỏa điều kiện
+deactivate Bot
+
+@enduml
