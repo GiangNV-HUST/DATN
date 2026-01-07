@@ -1,0 +1,111 @@
+@startuml sequence_uc6_phan_tich
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam sequenceMessageAlign center
+skinparam shadowing false
+
+actor User
+boundary "Discord Bot" as Bot
+control "Root Agent" as Root
+control "Analysis Agent" as Analysis
+entity "Task Classifier" as Classifier
+entity "Model Selector" as Selector
+participant "Gemini Flash" as Flash
+participant "Claude Sonnet" as Claude
+participant "GPT-4o" as GPT4
+entity "Usage Tracker" as Tracker
+participant "MCP Wrapper" as Wrapper
+participant "MCP Client" as Client
+participant "MCP Server" as Server
+database "Database" as DB
+
+User -> Bot: "Phân tích cổ phiếu VCB"
+activate Bot
+
+Bot -> Root: AI Router
+activate Root
+Root -> Root: Agent: AnalysisSpecialist
+
+Root -> Analysis: Route request
+activate Analysis
+
+Analysis -> Classifier: classify_task(query)
+activate Classifier
+Classifier -> Classifier: Extract: ANALYSIS task
+Classifier --> Analysis: Task types
+deactivate Classifier
+
+Analysis -> Selector: get_models_for_tasks
+activate Selector
+Selector --> Analysis: Flash + Claude + GPT-4o
+deactivate Selector
+
+Analysis -> Wrapper: get_stock_data(VCB, 90d)
+activate Wrapper
+Wrapper -> Client: call_tool
+activate Client
+Client -> Server: Fetch data
+activate Server
+Server -> DB: SELECT price history
+activate DB
+DB --> Server: 90 rows
+deactivate DB
+Server --> Client: Data
+deactivate Server
+Client --> Wrapper: Result
+deactivate Client
+deactivate Wrapper
+
+Analysis -> Flash: Summarize raw data
+activate Flash
+Flash --> Analysis: Summary ($0.000015)
+deactivate Flash
+
+Analysis -> Tracker: Track Gemini usage
+activate Tracker
+deactivate Tracker
+
+Analysis -> Claude: Deep analysis
+activate Claude
+Claude -> Claude: Technical + Fundamental
+Claude --> Analysis: Analysis result ($0.0204)
+deactivate Claude
+
+Analysis -> Tracker: Track Claude usage
+activate Tracker
+deactivate Tracker
+
+Analysis -> GPT4: Generate recommendation
+activate GPT4
+GPT4 --> Analysis: Investment advice ($0.0175)
+deactivate GPT4
+
+Analysis -> Tracker: Track GPT-4o usage
+activate Tracker
+Tracker -> Tracker: Total cost: $0.0379
+deactivate Tracker
+
+Analysis -> Wrapper: generate_chart
+activate Wrapper
+Wrapper -> Client: call_tool
+activate Client
+Client -> Server: Create chart
+activate Server
+Server --> Client: Chart image
+deactivate Server
+Client --> Wrapper: Result
+deactivate Client
+deactivate Wrapper
+
+Analysis -> Analysis: Combine results
+
+Analysis --> Root: Complete report
+deactivate Analysis
+
+Root --> Bot: Response
+deactivate Root
+
+Bot --> User: 📊 Phân tích VCB hoàn chỉnh\n(Cost: $0.0379)
+deactivate Bot
+
+@enduml

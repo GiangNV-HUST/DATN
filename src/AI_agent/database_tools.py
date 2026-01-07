@@ -177,17 +177,44 @@ class DatabaseTools:
 
     def search_stocks_by_criteria(self, criteria):
         """
-        Tìm cổ phiếu theo tiêu chí
+        Tìm cổ phiếu theo tiêu chí (ENHANCED - theo thiết kế tài liệu)
 
         Args:
-            criteria: Dict với các điều kiện
+            criteria: Dict với các điều kiện mở rộng
+
+                TECHNICAL INDICATORS:
                 - rsi_below: RSI < value
                 - rsi_above: RSI > value
+                - macd_positive: MACD > Signal line
+                - macd_negative: MACD < Signal line
+                - ma5_above_ma20: MA5 cross above MA20 (golden cross)
+                - ma5_below_ma20: MA5 cross below MA20 (death cross)
+                - volume_above: Volume > value
+                - volume_spike: Volume > avg_volume * multiplier
+
+                PRICE:
                 - price_below: Price < value
-                - price_above: Price < value
+                - price_above: Price > value
+                - price_change_percent: Price change % (positive or negative)
+
+                FUNDAMENTAL (from ratio table):
+                - pe_below: PE < value
+                - pe_above: PE > value
+                - pb_below: PB < value
+                - pb_above: PB > value
+                - roe_above: ROE > value (%)
+                - roe_below: ROE < value (%)
+                - roa_above: ROA > value (%)
+                - debt_equity_below: Debt/Equity < value
+                - current_ratio_above: Current ratio > value
+                - quick_ratio_above: Quick ratio > value
+
+                OTHER:
+                - limit: Max results (default 20)
+                - order_by: Sort field (default: close DESC)
 
         Returns:
-            list: Danh sách cổ phiếu matching
+            list: Danh sách cổ phiếu matching với đầy đủ thông tin
         """
         try:
             cursor = self.db.get_cursor()
@@ -195,49 +222,239 @@ class DatabaseTools:
             conditions = []
             params = []
 
+            # Join with ratio table if needed
+            need_ratio_join = any(k in criteria for k in [
+                'pe_below', 'pe_above', 'pb_below', 'pb_above',
+                'roe_above', 'roe_below', 'roa_above', 'debt_equity_below',
+                'current_ratio_above', 'quick_ratio_above'
+            ])
+
+            # ═══════════════════════════════════════════════════════
+            # TECHNICAL INDICATORS
+            # ═══════════════════════════════════════════════════════
+
+            # RSI
             if "rsi_below" in criteria:
-                conditions.append("rsi < %s")
+                conditions.append("p.rsi < %s")
                 params.append(criteria["rsi_below"])
 
             if "rsi_above" in criteria:
-                conditions.append("rsi > %s")
+                conditions.append("p.rsi > %s")
                 params.append(criteria["rsi_above"])
 
+            # MACD
+            if "macd_positive" in criteria and criteria["macd_positive"]:
+                conditions.append("p.macd_main > p.macd_signal")
+
+            if "macd_negative" in criteria and criteria["macd_negative"]:
+                conditions.append("p.macd_main < p.macd_signal")
+
+            # Moving Average Cross
+            if "ma5_above_ma20" in criteria and criteria["ma5_above_ma20"]:
+                conditions.append("p.ma5 > p.ma20")
+
+            if "ma5_below_ma20" in criteria and criteria["ma5_below_ma20"]:
+                conditions.append("p.ma5 < p.ma20")
+
+            # Volume
+            if "volume_above" in criteria:
+                conditions.append("p.volume > %s")
+                params.append(criteria["volume_above"])
+
+            if "volume_spike" in criteria:
+                # Volume spike: current volume > average * multiplier
+                multiplier = criteria.get("volume_spike_multiplier", 2.0)
+                conditions.append("""
+                    p.volume > (
+                        SELECT AVG(volume) * %s
+                        FROM stock.stock_prices_1d p2
+                        WHERE p2.ticker = p.ticker
+                        AND p2.time >= p.time - INTERVAL '20 days'
+                    )
+                """)
+                params.append(multiplier)
+
+            # ═══════════════════════════════════════════════════════
+            # PRICE
+            # ═══════════════════════════════════════════════════════
+
             if "price_below" in criteria:
-                conditions.append("close < %s")
+                conditions.append("p.close < %s")
                 params.append(criteria["price_below"])
 
             if "price_above" in criteria:
-                conditions.append("close > %s")
+                conditions.append("p.close > %s")
                 params.append(criteria["price_above"])
 
-            where_clause = " AND ".join(conditions) if conditions else "1=1"
+            if "price_change_percent" in criteria:
+                # Price change from open
+                change_pct = criteria["price_change_percent"]
+                if change_pct > 0:
+                    conditions.append("((p.close - p.open) / p.open * 100) > %s")
+                else:
+                    conditions.append("((p.close - p.open) / p.open * 100) < %s")
+                params.append(abs(change_pct))
 
-            query = f"""
-                SELECT ticker, close, rsi, ma5, ma20
-                FROM stock.stock_prices_1d
-                WHERE time = (SELECT MAX(time) FROM stock.stock_prices_1d)
-                AND {where_clause}
-                ORDER BY close DESC
-                LIMIT 20
-            """
+            # ═══════════════════════════════════════════════════════
+            # FUNDAMENTAL RATIOS
+            # ═══════════════════════════════════════════════════════
+
+            if need_ratio_join:
+                # PE
+                if "pe_below" in criteria:
+                    conditions.append("r.pe < %s")
+                    params.append(criteria["pe_below"])
+
+                if "pe_above" in criteria:
+                    conditions.append("r.pe > %s")
+                    params.append(criteria["pe_above"])
+
+                # PB
+                if "pb_below" in criteria:
+                    conditions.append("r.pb < %s")
+                    params.append(criteria["pb_below"])
+
+                if "pb_above" in criteria:
+                    conditions.append("r.pb > %s")
+                    params.append(criteria["pb_above"])
+
+                # ROE
+                if "roe_above" in criteria:
+                    conditions.append("r.roe > %s")
+                    params.append(criteria["roe_above"])
+
+                if "roe_below" in criteria:
+                    conditions.append("r.roe < %s")
+                    params.append(criteria["roe_below"])
+
+                # ROA
+                if "roa_above" in criteria:
+                    conditions.append("r.roa > %s")
+                    params.append(criteria["roa_above"])
+
+                # Debt/Equity
+                if "debt_equity_below" in criteria:
+                    conditions.append("r.debt_equity < %s")
+                    params.append(criteria["debt_equity_below"])
+
+                # Liquidity ratios
+                if "current_ratio_above" in criteria:
+                    conditions.append("r.current_ratio > %s")
+                    params.append(criteria["current_ratio_above"])
+
+                if "quick_ratio_above" in criteria:
+                    conditions.append("r.quick_ratio > %s")
+                    params.append(criteria["quick_ratio_above"])
+
+            # ═══════════════════════════════════════════════════════
+            # BUILD QUERY
+            # ═══════════════════════════════════════════════════════
+
+            where_clause = " AND ".join(conditions) if conditions else "1=1"
+            limit = criteria.get("limit", 20)
+            order_by = criteria.get("order_by", "p.close DESC")
+
+            if need_ratio_join:
+                # Join with ratio table
+                query = f"""
+                    SELECT DISTINCT ON (p.ticker)
+                        p.ticker,
+                        p.close,
+                        p.open,
+                        p.high,
+                        p.low,
+                        p.volume,
+                        p.rsi,
+                        p.ma5,
+                        p.ma20,
+                        p.macd_main,
+                        p.macd_signal,
+                        r.pe,
+                        r.pb,
+                        r.roe,
+                        r.roa,
+                        r.current_ratio,
+                        r.quick_ratio,
+                        r.debt_equity
+                    FROM stock.stock_prices_1d p
+                    LEFT JOIN LATERAL (
+                        SELECT pe, pb, roe, roa, current_ratio, quick_ratio, debt_equity
+                        FROM stock.ratio
+                        WHERE ticker = p.ticker
+                        ORDER BY year DESC, quarter DESC
+                        LIMIT 1
+                    ) r ON true
+                    WHERE p.time = (SELECT MAX(time) FROM stock.stock_prices_1d)
+                    AND {where_clause}
+                    ORDER BY {order_by}
+                    LIMIT %s
+                """
+            else:
+                # Only price data
+                query = f"""
+                    SELECT
+                        p.ticker,
+                        p.close,
+                        p.open,
+                        p.high,
+                        p.low,
+                        p.volume,
+                        p.rsi,
+                        p.ma5,
+                        p.ma20,
+                        p.macd_main,
+                        p.macd_signal
+                    FROM stock.stock_prices_1d p
+                    WHERE p.time = (SELECT MAX(time) FROM stock.stock_prices_1d)
+                    AND {where_clause}
+                    ORDER BY {order_by}
+                    LIMIT %s
+                """
+
+            params.append(limit)
 
             cursor.execute(query, tuple(params))
             rows = cursor.fetchall()
 
-            return [
-                {
+            # Format results
+            results = []
+            for row in rows:
+                result = {
                     "ticker": row["ticker"],
                     "close": float(row["close"]),
+                    "open": float(row.get("open", row["close"])),
+                    "high": float(row.get("high", row["close"])),
+                    "low": float(row.get("low", row["close"])),
+                    "volume": int(row.get("volume", 0)),
                     "rsi": float(row["rsi"]) if row["rsi"] else None,
                     "ma5": float(row["ma5"]) if row["ma5"] else None,
                     "ma20": float(row["ma20"]) if row["ma20"] else None,
+                    "macd_main": float(row.get("macd_main")) if row.get("macd_main") else None,
+                    "macd_signal": float(row.get("macd_signal")) if row.get("macd_signal") else None,
                 }
-                for row in rows
-            ]
+
+                # Add ratio data if available
+                if need_ratio_join:
+                    result.update({
+                        "pe": float(row["pe"]) if row.get("pe") else None,
+                        "pb": float(row["pb"]) if row.get("pb") else None,
+                        "roe": float(row["roe"]) if row.get("roe") else None,
+                        "roa": float(row["roa"]) if row.get("roa") else None,
+                        "current_ratio": float(row["current_ratio"]) if row.get("current_ratio") else None,
+                        "quick_ratio": float(row["quick_ratio"]) if row.get("quick_ratio") else None,
+                        "debt_equity": float(row["debt_equity"]) if row.get("debt_equity") else None,
+                    })
+
+                results.append(result)
+
+            logger.info(f"Found {len(results)} stocks matching {len(conditions)} criteria")
+            return results
 
         except Exception as e:
             logger.error(f"Error searching stocks: {e}")
+            # Rollback on error
+            if self.db.connection:
+                self.db.connection.rollback()
             return []
 
     def get_company_info(self, ticker):

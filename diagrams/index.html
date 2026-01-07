@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlantUML Diagrams - Stock Trading System (MCP)</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 40px;
+            font-size: 1.2em;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-bottom: 40px;
+            flex-wrap: wrap;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            text-align: center;
+            min-width: 150px;
+        }
+
+        .stat-card .number {
+            font-size: 2.5em;
+            font-weight: bold;
+        }
+
+        .stat-card .label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .diagram-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 30px;
+            margin-top: 40px;
+        }
+
+        .diagram-card {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+            cursor: pointer;
+        }
+
+        .diagram-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+        }
+
+        .diagram-card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .diagram-card .use-case {
+            color: #666;
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+
+        .diagram-card .complexity {
+            display: inline-block;
+            background: #ffd700;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            margin-bottom: 15px;
+        }
+
+        .diagram-card .description {
+            color: #555;
+            line-height: 1.6;
+            margin-bottom: 15px;
+        }
+
+        .diagram-card .participants {
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .diagram-card .participants-title {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+
+        .diagram-card .participants-list {
+            color: #666;
+            font-size: 0.85em;
+            line-height: 1.5;
+        }
+
+        .diagram-card .actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .diagram-card button {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-view {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-view:hover {
+            background: #5568d3;
+        }
+
+        .btn-download {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-download:hover {
+            background: #218838;
+        }
+
+        .instructions {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 20px;
+            margin-top: 40px;
+            border-radius: 8px;
+        }
+
+        .instructions h2 {
+            color: #856404;
+            margin-bottom: 15px;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+            color: #856404;
+        }
+
+        .instructions li {
+            margin-bottom: 10px;
+            line-height: 1.6;
+        }
+
+        .instructions code {
+            background: #f8f9fa;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .legend {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 20px;
+            margin-top: 30px;
+            border-radius: 8px;
+        }
+
+        .legend h3 {
+            color: #1976D2;
+            margin-bottom: 15px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .legend-item .emoji {
+            font-size: 1.5em;
+            margin-right: 10px;
+            width: 30px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 PlantUML Diagrams</h1>
+        <p class="subtitle">Hệ thống giao dịch chứng khoán với MCP Integration</p>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="number">9</div>
+                <div class="label">Diagrams</div>
+            </div>
+            <div class="stat-card">
+                <div class="number">25</div>
+                <div class="label">MCP Tools</div>
+            </div>
+            <div class="stat-card">
+                <div class="number">7-9</div>
+                <div class="label">Participants/Diagram</div>
+            </div>
+        </div>
+
+        <div class="diagram-grid">
+            <!-- Use Case Diagram -->
+            <div class="diagram-card">
+                <h3>📋 Use Case Diagram</h3>
+                <div class="use-case">Sơ đồ tổng quan hệ thống</div>
+                <div class="complexity">⭐⭐ Medium</div>
+                <div class="description">
+                    Hiển thị 9 use cases chính và mối quan hệ với MCP Server.
+                    Thể hiện rõ luồng từ User → Use Cases → MCP → External Services.
+                </div>
+                <div class="participants">
+                    <div class="participants-title">Components:</div>
+                    <div class="participants-list">
+                        User, 9 Use Cases, MCP Server, Database, TCBS API, Gemini AI
+                    </div>
+                </div>
+                <div class="actions">
+                    <button class="btn-view" onclick="openFile('usecase_diagram_with_mcp.puml')">Xem File</button>
+                </div>
+            </div>
+
+            <!-- UC1 -->
+            <div class="diagram-card">
+                <h3>🔐 UC1: Xác thực danh tính</h3>
+                <div class="use-case">Authentication Flow</div>
+                <div class="complexity">⭐ Simple</div>
+                <div class="description">
+                    User gửi tin nhắn → Bot kiểm tra session → MCP tool get_user_session
+                    → Validate và return kết quả. Có caching 5 phút.
+                </div>
+                <div class="participants">
+                    <div class="participants-title">Participants (7):</div>
+                    <div class="participants-list">
+                        User, Bot, Root Agent, MCP Wrapper, MCP Client, MCP Server, Database
+                    </div>
+                </div>
+                <div class="actions">
+                    <button class="btn-view" onclick="openFile('sequence_uc1_xac_thuc.puml')">Xem File</button>
+                </div>
+            </div>
+
+            <!-- UC2 -->
+            <div class="diagram-card">
+                <h3>🔔 UC2: Đăng ký cảnh báo</h3>
+                <div class="use-case">Alert Management</div>
+                <div class="complexity">⭐⭐ Medium</div>
+                <div class="description">
+                    AI Router phân tích câu hỏi → AlertManager extract thông tin
+                    → MCP tool create_alert → Insert vào database. Không cache vì là write operation.
+                </div>
+                <div class="participants">
+                    <div class="participants-title">Participants (8):</div>
+                    <div class="participants-list">
+                        User, Bot, Root Agent, Alert Agent, MCP Wrapper, MCP Client, MCP Server, Database
+                    </div>
+                </div>
+                <div class="actions">
+                    <button class="btn-view" onclick="openFile('sequence_uc2_dang_ky_canh_bao.puml')">Xem File</button>
+                </div>
+            </div>
+
+            <!-- UC3 -->
+            <div class="diagram-card">
+                <h3>📌 UC3: Đăng ký theo dõi</h3>
+                <div class="use-case">Subscription Management</div>
+                <div class="complexity">⭐⭐ Medium</div>
+                <div class="description">
+                    User subscribe mã cổ phiếu → SubscriptionManager
+                    → MCP tool create_subscription → Thêm vào monitoring queue.
+                    Background worker sẽ check giá, tin tức định kỳ.
+                </div>
+                <div class="participants">
+                    <div class="participants-title">Participants (8):</div>
+                    <div class="participants-list">
+                        User, Bot, Root Agent, Subscription Manager, MCP Wrapper, MCP Client, MCP Server, Database
+                    </div>
+                </div>
+                <div class="actions">
+                    <button class="btn-view" onclick="openFile('sequence_uc3_subscription.puml')">Xem File</button>
+                </div>
+            </div>
+
+            <!-- UC4 -->
+            <div class="diagram-card">
+                <h3>🔍 UC4: Lọc cổ phiếu</h3>
+                <div class="use-case">Stock Screening</div>
+                <div class="complexity">⭐⭐⭐ Complex</div>
+                <div class="description">
+                    Screener với 80+ criteria. Gọi TCBS API → Lấy fundamental data,
+                    query Database → Lấy technical indicators, merge data trong MCP Server.
+                    Cache 10 phút → Lần sau nhanh 10x.
+                </div>
+                <div class="participants">
+                    <div class="participants-title">Participants (9):</div>
+                    <div class="participants-list">
+                        User, Bot, Root Agent, Screener Agent, MCP Wrapper, MCP Client, MCP Server, TCBS API, Database
+                    </div>
+                </div>
+                <div class="actions">
+                    <button class="btn-view" onclick="openFile('sequence_uc4_loc_co_phieu.puml')">Xem File</button>
+                </div>
+            </div>
+
+            <!-- UC6 -->
+            <div class="diagram-card">
+                <h3>📈 UC6: Phân tích KT & TC</h3>
+                <div class="use-case">Technical & Fundamental Analysis</div>
+                <div class="complexity">⭐⭐⭐⭐ Very Complex</div>
+                <div class="description">
+                    Orchestrate 4 MCP tools: get_stock_data → get_financial_data
+                    → generate_chart → gemini_summarize. Gemini AI tìm kiếm web,
+                    phân tích sentiment, đưa ra khuyến nghị. Total ~2s lần đầu, <500ms khi cached.
+                </div>
+                <div class="participants">
+                    <div class="participants-title">Participants (9):</div>
+                    <div class="participants-list">
+                        User, Bot, Root Agent, Analysis Agent, MCP Wrapper, MCP Client, MCP Server, Gemini AI, Database
+                    </div>
+                </div>
+                <div class="actions">
+                    <button class="btn-view" onclick="openFile('sequence_uc6_phan_tich.puml')">Xem File</button>
+                </div>
+            </div>
+
+            <!-- UC7 -->
+            <div class="diagram-card">
+                <h3>📊 UC7: Xem biểu đồ</h3>
+                <div class="use-case">Chart Generation</div>
+                <div class="complexity">⭐⭐ Medium</div>
+                <div class="description">
+                    Lấy price history từ MCP → Discord Bot tạo chart local bằng matplotlib.
+                    4 subplots: Candlestick + MA, Volume, RSI, MACD.
+                    Option: Có thể dùng MCP tool generate_chart_from_data (centralized).
+                </div>
+                <div class="participants">
+                    <div class="participants-title">Participants (7):</div>
+                    <div class="participants-list">
+                        User, Bot, Root Agent, Analysis Agent, MCP Wrapper, MCP Client, MCP Server, Database
+                    </div>
+                </div>
+                <div class="actions">
+                    <button class="btn-view" onclick="openFile('sequence_uc7_chart.puml')">Xem File</button>
+                </div>
+            </div>
+
+            <!-- UC8 -->
+            <div class="diagram-card" style="grid-column: span 2;">
+                <h3>💼 UC8: Tư vấn đầu tư</h3>
+                <div class="use-case">Investment Advisory - Most Complex</div>
+                <div class="complexity">⭐⭐⭐⭐⭐ Most Complex</div>
+                <div class="description">
+                    <strong>Orchestrate 6 MCP tools tuần tự:</strong><br>
+                    1. gather_investment_profile → Thu thập profile đầu tư<br>
+                    2. discover_stocks_by_profile → Tìm 10 cổ phiếu phù hợp<br>
+                    3. calculate_portfolio_allocation → Phân bổ danh mục 100M VNĐ<br>
+                    4. generate_entry_strategy → Chiến lược DCA 4 tuần<br>
+                    5. generate_risk_management_plan → Stop loss, take profit<br>
+                    6. generate_monitoring_plan → Kế hoạch theo dõi hàng ngày<br>
+                    <br>
+                    Gemini AI được gọi 3 lần. Total: ~15-20s lần đầu, <2s khi cached.
+                </div>
+                <div class="participants">
+                    <div class="participants-title">Participants (9):</div>
+                    <div class="participants-list">
+                        User, Bot, Root Agent, Investment Planner, MCP Wrapper, MCP Client, MCP Server, Gemini AI, Database/TCBS
+                    </div>
+                </div>
+                <div class="actions">
+                    <button class="btn-view" onclick="openFile('sequence_uc8_tu_van_dau_tu.puml')">Xem File</button>
+                </div>
+            </div>
+
+            <!-- UC9 -->
+            <div class="diagram-card">
+                <h3>🔎 UC9: Khám phá cổ phiếu</h3>
+                <div class="use-case">Stock Discovery</div>
+                <div class="complexity">⭐⭐⭐ Complex</div>
+                <div class="description">
+                    Natural language search với 3 MCP tools: search_potential_stocks
+                    → filter_stocks_by_criteria → rank_stocks_by_score.
+                    AI-powered ranking (Technical 30% + Fundamental 40% + Sentiment 30%).
+                    Gemini tìm kiếm tin tức, phân tích sentiment.
+                </div>
+                <div class="participants">
+                    <div class="participants-title">Participants (9):</div>
+                    <div class="participants-list">
+                        User, Bot, Root Agent, Discovery Specialist, MCP Wrapper, MCP Client, MCP Server, Gemini AI, Database/TCBS
+                    </div>
+                </div>
+                <div class="actions">
+                    <button class="btn-view" onclick="openFile('sequence_uc9_discovery.puml')">Xem File</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="legend">
+            <h3>📖 Legend - Participants trong Diagrams</h3>
+            <div class="legend-item">
+                <span class="emoji">👤</span>
+                <span><strong>User:</strong> Người dùng thông qua Discord</span>
+            </div>
+            <div class="legend-item">
+                <span class="emoji">🤖</span>
+                <span><strong>Discord Bot:</strong> Interface layer, format messages, generate charts</span>
+            </div>
+            <div class="legend-item">
+                <span class="emoji">🎯</span>
+                <span><strong>Root Agent (HybridOrchestrator):</strong> AI Router, quyết định mode & agent</span>
+            </div>
+            <div class="legend-item">
+                <span class="emoji">⚙️</span>
+                <span><strong>Specialized Agents (6):</strong> AlertManager, Screener, Analysis, Investment, Subscription, Discovery</span>
+            </div>
+            <div class="legend-item">
+                <span class="emoji">🔗</span>
+                <span><strong>MCP Wrapper:</strong> Bridge async ↔ sync contexts (ThreadPoolExecutor)</span>
+            </div>
+            <div class="legend-item">
+                <span class="emoji">💾</span>
+                <span><strong>MCP Client (Enhanced):</strong> Caching, retry, circuit breaker, metrics</span>
+            </div>
+            <div class="legend-item">
+                <span class="emoji">🖥️</span>
+                <span><strong>MCP Server:</strong> Process riêng, 25 tools, kết nối Database/APIs</span>
+            </div>
+            <div class="legend-item">
+                <span class="emoji">🗄️</span>
+                <span><strong>Database:</strong> PostgreSQL + TimescaleDB (stock prices, ratios, alerts, subscriptions)</span>
+            </div>
+            <div class="legend-item">
+                <span class="emoji">☁️</span>
+                <span><strong>TCBS API:</strong> Vietnamese stock market data (80+ screening criteria)</span>
+            </div>
+            <div class="legend-item">
+                <span class="emoji">🤖</span>
+                <span><strong>Gemini AI:</strong> Google's AI for analysis, search, sentiment, ranking</span>
+            </div>
+        </div>
+
+        <div class="instructions">
+            <h2>🚀 Cách sử dụng PlantUML trong VS Code</h2>
+            <ol>
+                <li>
+                    <strong>Cài extension PlantUML:</strong><br>
+                    Mở VS Code → Extensions (Ctrl+Shift+X) → Tìm "PlantUML" → Install
+                </li>
+                <li>
+                    <strong>Preview diagram:</strong><br>
+                    Mở file <code>.puml</code> → Nhấn <code>Alt+D</code> hoặc <code>Ctrl+Shift+P</code> → "PlantUML: Preview Current Diagram"
+                </li>
+                <li>
+                    <strong>Export PNG/SVG:</strong><br>
+                    <code>Ctrl+Shift+P</code> → "PlantUML: Export Current Diagram" → Chọn format (PNG/SVG/PDF)
+                </li>
+                <li>
+                    <strong>Export tất cả cùng lúc:</strong><br>
+                    Chạy Python script: <code>python render_all.py</code><br>
+                    Hoặc command line: <code>java -jar plantuml.jar -tpng *.puml</code>
+                </li>
+                <li>
+                    <strong>Thay thế trong tài liệu Word:</strong><br>
+                    Copy file PNG từ thư mục <code>output/</code> → Paste vào Word/PDF
+                </li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        function openFile(filename) {
+            alert('Mở file: ' + filename + '\n\nTrong VS Code:\n1. Mở file này trong Explorer\n2. Nhấn Alt+D để preview\n3. Ctrl+Shift+P → "PlantUML: Export" để export PNG');
+        }
+    </script>
+</body>
+</html>
