@@ -1,0 +1,60 @@
+!pragma charset UTF-8
+@startuml agent_system_architecture_with_prediction
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+
+skinparam rectangle {
+    BackgroundColor<<user>> #E8E8FF
+    BackgroundColor<<router>> #FFECB3
+    BackgroundColor<<agent>> #FFD6D6
+    BackgroundColor<<prediction>> #FFB6C1
+    BackgroundColor<<output>> #F0E6FF
+    BorderColor #333333
+    FontSize 11
+}
+
+rectangle "User's query" as query <<user>>
+rectangle "Root_agent" as root <<router>>
+rectangle "Output" as output <<output>>
+
+rectangle "alert_agent" as alert <<agent>>
+rectangle "subscription_agent" as subscription <<agent>>
+rectangle "screener_agent" as screener <<agent>>
+rectangle "general_agent" as general <<agent>>
+rectangle "analysis_agent" as analysis <<agent>>
+rectangle "investment_planner" as investment <<agent>>
+rectangle "discovery_agent" as discovery <<agent>>
+rectangle "prediction_agent" as prediction <<prediction>>
+
+query --> root : "routing"
+
+root --> alert : "Xử lý cảnh báo\n(tạo/xóa/danh sách)"
+root --> subscription : "Xử lý đăng ký theo dõi\n(tạo/xóa/danh sách)"
+root --> screener : "Sàng lọc cổ phiếu"
+root --> general : "Truy vấn tổng quát"
+root --> analysis : "Phân tích cổ phiếu"
+root --> investment : "Lập kế hoạch đầu tư"
+root --> discovery : "Tìm kiếm cổ phiếu tiềm năng"
+root --> prediction : "Dự đoán giá cổ phiếu\n(3 ngày, 48 ngày)"
+
+alert --> output
+subscription --> output
+screener --> output
+general --> output
+analysis --> output
+investment --> output
+discovery --> output
+prediction --> output
+
+note right of prediction
+  **NEW: Prediction Agent**
+  • Ensemble 5-model prediction
+  • Scenario handling (5 handlers)
+  • Time horizons: 3 days, 48 days
+  • MAPE: 1.99% (3d), 14.58% (48d)
+end note
+
+@enduml

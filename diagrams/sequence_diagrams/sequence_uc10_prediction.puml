@@ -1,0 +1,170 @@
+!pragma charset UTF-8
+@startuml sequence_uc10_prediction
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+title UC10: Dự đoán giá cổ phiếu (Stock Price Prediction)
+
+actor "User" as user
+participant "Root Agent" as root
+participant "Prediction Agent" as pred_agent
+participant "Task Classifier" as classifier
+participant "Claude Sonnet 4.5" as claude
+participant "MCP Server" as mcp
+participant "predict_stock_price" as predict_tool
+participant "Ensemble Stacking" as ensemble
+participant "5 Base Models" as base_models
+participant "Meta-Model" as meta
+participant "Scenario Handlers" as handlers
+database "PostgreSQL" as db
+
+== Khởi tạo Dự đoán ==
+user -> root: "Dự đoán giá VCB 3 ngày tới"
+activate root
+
+root -> pred_agent: Route to prediction_agent
+activate pred_agent
+
+pred_agent -> classifier: Classify task type
+activate classifier
+classifier --> pred_agent: PREDICTION task → Claude Sonnet 4.5
+deactivate classifier
+
+pred_agent -> claude: Execute prediction task
+activate claude
+
+== Gọi MCP Tool ==
+claude -> mcp: Call predict_stock_price(\n  ticker="VCB",\n  horizon="3day",\n  include_scenarios=True\n)
+activate mcp
+
+mcp -> predict_tool: Execute prediction
+activate predict_tool
+
+== Lấy Dữ liệu Lịch sử ==
+predict_tool -> db: Query historical data\n(1000 trading days)
+activate db
+db --> predict_tool: OHLCV + indicators (60+)
+deactivate db
+
+== Feature Engineering ==
+predict_tool -> predict_tool: Feature engineering:\n• Technical indicators (RSI, MACD, BB)\n• Moving averages (5,10,20,50,200)\n• Volume indicators\n• Market sentiment
+
+== Ensemble Prediction ==
+predict_tool -> ensemble: Predict with ensemble
+activate ensemble
+
+ensemble -> base_models: Run 5 base models in parallel
+activate base_models
+
+base_models -> base_models: PatchTST prediction
+note right: Transformer with patching\nMAPE: 2.23%
+
+base_models -> base_models: LSTM + Attention prediction
+note right: Bidirectional LSTM\nMAPE: 2.42%
+
+base_models -> base_models: LightGBM prediction
+note right: Gradient boosting\nMAPE: 2.69%
+
+base_models -> base_models: Prophet prediction
+note right: Additive model\nMAPE: 3.23%
+
+base_models -> base_models: XGBoost prediction
+note right: Tree boosting\nMAPE: 2.78%
+
+base_models --> ensemble: Return 5 predictions:\n[102300, 101800, 102500, 101200, 102100]
+deactivate base_models
+
+== Meta-Learning ==
+ensemble -> meta: Combine predictions with learned weights
+activate meta
+
+meta -> meta: Apply weights:\n• PatchTST: 28.5%\n• LSTM: 24.1%\n• LightGBM: 22.3%\n• XGBoost: 14.3%\n• Prophet: 10.8%
+
+meta --> ensemble: Base prediction: 102,300 VND
+deactivate meta
+deactivate ensemble
+
+== Scenario Handling ==
+predict_tool -> handlers: Check scenario triggers
+activate handlers
+
+handlers -> db: Query market conditions
+activate db
+db --> handlers: • VN-Index: -0.5%\n• Foreign flow: 97.3% room used\n• News: None\n• VN30 rebalance: None
+deactivate db
+
+handlers -> handlers: Detect scenarios:\n✓ Foreign Flow Handler triggered\n  (room 97.3% > 95%)
+
+handlers -> handlers: Calculate adjustment:\nForeign Flow: -3% adjustment
+
+handlers --> predict_tool: Adjusted prediction:\n102,300 → 99,231 VND (+0.74%)
+deactivate handlers
+
+== Tính Confidence ==
+predict_tool -> predict_tool: Calculate confidence:\n• Model agreement: 85%\n• Historical MAPE: 1.99%\n• Scenario impact: Medium\n→ Confidence: 78%
+
+== Kết quả ==
+predict_tool --> mcp: Return prediction result:
+note right
+  {
+    "ticker": "VCB",
+    "current_price": 98500,
+    "predicted_price": 99231,
+    "change_percent": 0.74,
+    "horizon": "3day",
+    "confidence": 0.78,
+    "base_prediction": 102300,
+    "scenario_adjustments": {
+      "foreign_flow": -3.0
+    },
+    "recommendation": "HOLD",
+    "risk_level": "LOW",
+    "individual_predictions": {
+      "patchtst": 102300,
+      "lstm": 101800,
+      "lightgbm": 102500,
+      "prophet": 101200,
+      "xgboost": 102100
+    }
+  }
+end note
+deactivate predict_tool
+deactivate mcp
+
+claude -> claude: Format response with:\n• Prediction summary\n• Scenario analysis\n• Risk assessment\n• Trading recommendation
+
+claude --> pred_agent: Formatted prediction
+deactivate claude
+
+pred_agent --> root: Return result
+deactivate pred_agent
+
+root --> user: Display prediction:\n"Dự đoán giá VCB sau 3 ngày:\n99,231 VND (+0.74%)\n\nĐộ tin cậy: 78%\nKhuyến nghị: HOLD\n\nPhân tích:\n- Base ensemble: 102,300 VND\n- Điều chỉnh Foreign Flow: -3%\n- Room ngoại gần đầy (97.3%)"
+deactivate root
+
+== Lưu ý ==
+note over user, db
+  **Performance Metrics:**
+  • 3-day MAPE: 1.99%
+  • 3-day R²: 0.874
+  • 48-day MAPE: 14.58%
+  • 48-day R²: 0.176
+
+  **Ensemble Models:**
+  • PatchTST (Transformer)
+  • LSTM + Attention
+  • LightGBM (Gradient Boosting)
+  • Prophet (Time Series)
+  • XGBoost (Tree Boosting)
+
+  **Scenario Handlers:**
+  • News Shock (-5% to +8%)
+  • Market Crash (-15% to -8%)
+  • Foreign Flow (-3% to +2%)
+  • VN30 Adjustment (-5% to +5%)
+  • Margin Call (-10% to -5%)
+end note
+
+@enduml

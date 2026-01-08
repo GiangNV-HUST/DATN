@@ -1,0 +1,125 @@
+!pragma charset UTF-8
+@startuml prediction_agent_multi_model
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+skinparam rectangle {
+    BackgroundColor<<user>> #E8E8FF
+    BackgroundColor<<router>> #FFECB3
+    BackgroundColor<<agent>> #FFB6C1
+    BackgroundColor<<model>> #E1F5FE
+    BackgroundColor<<mcp>> #D4E6F1
+    BackgroundColor<<tool>> #D4F1D4
+    BackgroundColor<<ensemble>> #FFE4E1
+    BackgroundColor<<scenario>> #FFF9C4
+    BackgroundColor<<output>> #F0E6FF
+    BorderColor #333333
+    FontSize 11
+}
+
+rectangle "User's query" as query <<user>>
+rectangle "Root_agent" as root <<router>>
+rectangle "prediction_agent" as pred_agent <<agent>>
+
+rectangle "Task Classifier" as selector <<router>>
+
+rectangle "Claude Sonnet 4.5" as claude_sonnet <<model>>
+rectangle "Gemini 2.0 Flash" as gemini_flash <<model>>
+
+rectangle "MCP Server" as mcp <<mcp>>
+rectangle "Output" as output <<output>>
+
+rectangle "predict_stock_price" as predict <<tool>>
+rectangle "batch_predict_stocks" as batch_predict <<tool>>
+rectangle "get_prediction_confidence" as confidence <<tool>>
+
+rectangle "Ensemble Stacking\n(5 Models)" as ensemble <<ensemble>> {
+    rectangle "PatchTST" as patchtst
+    rectangle "LSTM + Attention" as lstm
+    rectangle "LightGBM" as lgbm
+    rectangle "Prophet" as prophet
+    rectangle "XGBoost" as xgb
+    rectangle "Meta-Model\n(MLPRegressor)" as meta
+}
+
+rectangle "Scenario Handlers" as handlers <<scenario>> {
+    rectangle "News Shock" as news
+    rectangle "Market Crash" as crash
+    rectangle "Foreign Flow" as foreign
+    rectangle "VN30 Adjustment" as vn30
+    rectangle "Margin Call" as margin
+}
+
+query --> root
+root --> pred_agent : "routing"
+
+pred_agent --> selector : "Phân loại nhiệm vụ"
+
+selector --> claude_sonnet : "PREDICTION\n(Nhiệm vụ chính)"
+selector --> gemini_flash : "DATA_QUERY\n(Dữ liệu lịch sử)"
+
+claude_sonnet --> mcp : "Gọi MCP tools"
+gemini_flash --> mcp : "Gọi MCP tools"
+
+mcp -.-> predict : "Claude Sonnet 4.5\n(Dự đoán đơn)"
+mcp -.-> batch_predict : "Claude Sonnet 4.5\n(Dự đoán batch)"
+mcp -.-> confidence : "Gemini Flash\n(Độ tin cậy)"
+
+predict --> ensemble : "Gọi Ensemble"
+batch_predict --> ensemble : "Gọi Ensemble"
+
+patchtst --> meta : "Prediction 1"
+lstm --> meta : "Prediction 2"
+lgbm --> meta : "Prediction 3"
+prophet --> meta : "Prediction 4"
+xgb --> meta : "Prediction 5"
+
+meta --> handlers : "Base prediction"
+
+news --> output : "Adjusted prediction"
+crash --> output : "Adjusted prediction"
+foreign --> output : "Adjusted prediction"
+vn30 --> output : "Adjusted prediction"
+margin --> output : "Adjusted prediction"
+
+confidence --> output
+
+pred_agent --> output
+
+note right of claude_sonnet
+  Claude Sonnet 4.5 - PREDICTION Task
+  - Dự đoán giá cổ phiếu
+  - Dự đoán batch (nhiều mã)
+  - Giải thích kết quả
+  Best reasoning & prediction
+end note
+
+note right of gemini_flash
+  Gemini 2.0 Flash - DATA_QUERY
+  - Lấy dữ liệu lịch sử
+  - Độ tin cậy dự đoán
+  Ultra fast data retrieval
+end note
+
+note bottom of ensemble
+  **Ensemble Stacking**
+  • 5 base models với weights khác nhau
+  • Meta-model: MLPRegressor (64-32 neurons)
+  • Cross-validation: 5-fold
+  • MAPE: 1.99% (3d), 14.58% (48d)
+  • R²: 0.874 (3d), 0.176 (48d)
+end note
+
+note bottom of handlers
+  **Scenario Handlers**
+  Điều chỉnh dự đoán theo:
+  • Tin tức đột biến (-5% to +8%)
+  • Sụp đổ thị trường (-15% to -8%)
+  • Dòng vốn ngoại (-3% to +2%)
+  • VN30 adjustment (-5% to +5%)
+  • Margin call (-10% to -5%)
+end note
+
+@enduml
