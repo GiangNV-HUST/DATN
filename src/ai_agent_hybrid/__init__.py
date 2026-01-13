@@ -1,20 +1,26 @@
 """
-AI Agent Hybrid System
+Multi-Agent Stock Analysis System
 
-Combines the best of Multi-Agent (OLD) and MCP (NEW) systems:
-- AI-powered routing (from OLD)
-- MCP tools (from NEW)
-- Enhanced caching and resilience (Hybrid innovation)
+A Multi-Agent AI system for Vietnamese stock market analysis with 8 Specialist Agents:
+1. AnalysisSpecialist - Stock analysis (technical, fundamental)
+2. ScreenerSpecialist - Stock screening and filtering
+3. AlertManager - Price alert management
+4. InvestmentPlanner - Investment planning
+5. DiscoverySpecialist - Stock discovery
+6. SubscriptionManager - Subscription management
+7. MarketContextSpecialist - Market overview (VN-Index, sectors)
+8. ComparisonSpecialist - Stock comparison
 """
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __author__ = "AI Agent Team"
 
-from .hybrid_system.orchestrator import HybridOrchestrator, AIRouter
-from .mcp_client import EnhancedMCPClient
+from .hybrid_system.orchestrator import MultiAgentOrchestrator, SpecialistRouter
+from .mcp_client import EnhancedMCPClient, DirectMCPClient
 
 __all__ = [
-    'HybridOrchestrator',
-    'AIRouter',
+    'MultiAgentOrchestrator',
+    'SpecialistRouter',
     'EnhancedMCPClient',
+    'DirectMCPClient',
 ]

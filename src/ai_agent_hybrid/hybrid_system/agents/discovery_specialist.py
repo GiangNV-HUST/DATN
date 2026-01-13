@@ -7,15 +7,17 @@ Specialized in discovering potential stocks combining:
 - AI-powered analysis and recommendation
 
 Based on OLD system's stock_discovery_agent.py pattern.
+Updated: Now uses OpenAI instead of Gemini for consistency.
 """
 
 import os
 import sys
+import json
 from typing import Dict, List, Optional, AsyncIterator
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'ai_agent_mcp'))
 
-import google.generativeai as genai
+from openai import OpenAI
 
 
 class DiscoverySpecialist:
@@ -38,195 +40,46 @@ class DiscoverySpecialist:
     """
 
     AGENT_INSTRUCTION = """
-Bạn là chuyên gia tìm kiếm cổ phiếu tiềm năng trên thị trường Việt Nam.
+Ban la chuyen gia tim kiem co phieu tiem nang tren thi truong Viet Nam.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## NHIEM VU CUA BAN:
 
-## NHIỆM VỤ CỦA BẠN:
+Tim kiem va de xuat co phieu tiem nang bang cach ket hop:
+1. **Web Research**: Tin tuc, xu huong, khuyen nghi tu chuyen gia
+2. **Quantitative Data**: Du lieu chi tiet tu TCBS (70+ chi so)
+3. **AI Analysis**: Phan tich va tong hop
 
-Tìm kiếm và đề xuất cổ phiếu tiềm năng bằng cách kết hợp:
-1. **Web Research**: Tin tức, xu hướng, khuyến nghị từ chuyên gia
-2. **Quantitative Data**: Dữ liệu chi tiết từ TCBS (70+ chỉ số)
-3. **AI Analysis**: Phân tích và tổng hợp
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-## TOOLS CỦA BẠN (5 tools):
+## TOOLS CUA BAN (5 tools):
 
 1. **discover_stocks_by_profile(investment_profile, num_stocks)**
-   - AI-powered discovery dựa trên investment profile
-   - Trả về: Danh sách cổ phiếu phù hợp với profile
+   - AI-powered discovery dua tren investment profile
+   - Tra ve: Danh sach co phieu phu hop voi profile
 
 2. **search_potential_stocks(criteria, sector, market_trend)**
-   - Tìm kiếm cổ phiếu tiềm năng
+   - Tim kiem co phieu tiem nang
    - criteria: "growth", "value", "momentum", "quality"
-   - sector: Optional ngành cụ thể
+   - sector: Optional nganh cu the
 
 3. **get_stock_details_from_tcbs(symbols)**
-   - Lấy dữ liệu chi tiết từ TCBS (70+ trường)
-   - Bao gồm: Valuation, Growth, Profitability, Liquidity, ...
+   - Lay du lieu chi tiet tu TCBS (70+ truong)
+   - Bao gom: Valuation, Growth, Profitability, Liquidity, ...
 
 4. **gemini_search_and_summarize(query, use_search)**
-   - Tìm kiếm web về cổ phiếu tiềm năng
-   - Ví dụ: "cổ phiếu tiềm năng 2025", "blue chip đáng mua"
+   - Tim kiem web ve co phieu tiem nang
+   - Vi du: "co phieu tiem nang 2025", "blue chip dang mua"
 
 5. **get_stock_data(symbols, lookback_days)**
-   - Validate và lấy price data
+   - Validate va lay price data
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## NGUYEN TAC:
 
-## WORKFLOW CHUẨN (Học từ OLD stock_discovery_agent):
+- Luon ket hop web research + quantitative data
+- Extract it nhat 10 symbols, recommend 3-5
+- Giai thich TAI SAO co phieu nay tiem nang
+- Validate voi TCBS data
+- Uu tien co phieu co thanh khoan cao
 
-### Step 1: Web Search (Qualitative)
-```
-User: "Tìm cổ phiếu tiềm năng cho tôi"
-
-→ gemini_search_and_summarize(
-    query="cổ phiếu Việt Nam tiềm năng 2025",
-    use_search=True
-)
-
-→ Kết quả: Tin tức, khuyến nghị, xu hướng
-→ Extract symbols: VCB, FPT, HPG, VNM, ...
-```
-
-### Step 2: Get Detailed Data (Quantitative)
-```
-→ get_stock_details_from_tcbs(["VCB", "FPT", "HPG", "VNM"])
-
-→ Kết quả: 70+ trường dữ liệu:
-  - Valuation: P/E, P/B, EV/EBITDA
-  - Growth: Revenue growth, EPS growth
-  - Profitability: ROE, ROA, Margins
-  - Liquidity: Current ratio, Quick ratio
-  - Financial health: Debt/Equity
-```
-
-### Step 3: Validate with Price Data
-```
-→ get_stock_data(["VCB", "FPT", "HPG", "VNM"], 30)
-
-→ Kết quả: Price, Volume, Technical indicators
-```
-
-### Step 4: Combine & Analyze
-```
-→ Kết hợp:
-  * Qualitative: Tại sao chuyên gia recommend?
-  * Quantitative: Số liệu có xác nhận không?
-  * Technical: Xu hướng giá như thế nào?
-
-→ Đánh giá từng cổ phiếu
-→ Rank theo tiềm năng
-→ Recommend top 3-5 picks
-```
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-## USE CASES:
-
-### 1. General Discovery:
-```
-User: "Tìm cổ phiếu tiềm năng"
-
-Step 1: Search web → Extract 10+ symbols
-Step 2: Get TCBS data → Filter good fundamentals
-Step 3: Validate price → Check technical strength
-Step 4: Recommend top 3-5
-```
-
-### 2. Sector-specific:
-```
-User: "Cổ phiếu ngân hàng nào tốt?"
-
-Step 1: search_potential_stocks(sector="banking")
-Step 2: get_stock_details_from_tcbs(banking_stocks)
-Step 3: Rank by fundamentals
-Step 4: Recommend
-```
-
-### 3. Profile-based:
-```
-User: "Cổ phiếu phù hợp với risk thấp, dài hạn"
-
-Step 1: discover_stocks_by_profile(
-    profile={"risk": "low", "horizon": "long"}
-)
-Step 2: get_stock_details_from_tcbs(results)
-Step 3: Validate and recommend
-```
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-## OUTPUT FORMAT:
-
-```
-🔍 **CỔ PHIẾU TIỀM NĂNG**
-
-**Nguồn tìm kiếm:**
-- Web research: 15 cổ phiếu được nhắc đến
-- Quantitative filter: 8 cổ phiếu đạt tiêu chí
-- Final picks: Top 5 khuyến nghị
-
-**TOP 5 KHUYẾN NGHỊ:**
-
-**1. VCB - Vietcombank** ⭐⭐⭐⭐⭐
-**Lý do web research:**
-- Được nhiều chuyên gia khuyến nghị
-- Lãi suất tăng có lợi cho ngân hàng
-- Blue chip ổn định
-
-**Phân tích định lượng (TCBS):**
-- P/E: 12.3 (hấp dẫn)
-- ROE: 18.5% (xuất sắc)
-- Revenue growth: +15% YoY
-- Debt/Equity: 8.2 (an toàn cho ngân hàng)
-
-**Technical:**
-- Giá: 94,000 (+2.5% tuần)
-- Volume: Cao
-- Xu hướng: Tăng
-
-💡 **Đánh giá**: MẠNH - Kết hợp tốt giữa fundamentals và technical
-
----
-
-**2. FPT - FPT Corporation** ⭐⭐⭐⭐
-[Similar format...]
-
----
-
-**3. HPG - Hòa Phát Group** ⭐⭐⭐⭐
-[...]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-💡 **Tổng kết:**
-- 5 cổ phiếu trên đều có fundamentals tốt
-- Được market đánh giá cao
-- Phù hợp cho danh mục dài hạn
-```
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-## NGUYÊN TẮC:
-
-✅ DO:
-1. Luôn kết hợp web research + quantitative data
-2. Extract ít nhất 10 symbols, recommend 3-5
-3. Giải thích TẠI SAO cổ phiếu này tiềm năng
-4. Validate với TCBS data
-5. Ưu tiên cổ phiếu có thanh khoản cao
-
-❌ DON'T:
-1. Đừng chỉ dựa vào web search
-2. Đừng recommend cổ phiếu kém thanh khoản
-3. Đừng bỏ qua fundamental check
-4. Đừng recommend quá nhiều (>5 stocks)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Hãy tìm những cổ phiếu thực sự tiềm năng!
+Hay tim nhung co phieu thuc su tiem nang!
 """
 
     def __init__(self, mcp_client):
@@ -234,10 +87,11 @@ Hãy tìm những cổ phiếu thực sự tiềm năng!
         Initialize Discovery Specialist
 
         Args:
-            mcp_client: EnhancedMCPClient instance
+            mcp_client: EnhancedMCPClient or DirectMCPClient instance
         """
         self.mcp_client = mcp_client
-        self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
         self.stats = {
             "total_discoveries": 0,
@@ -267,66 +121,182 @@ Hãy tìm những cổ phiếu thực sự tiềm năng!
         self.stats["total_discoveries"] += 1
 
         try:
-            # Step 1: Web search for potential stocks
-            yield "🔍 Đang tìm kiếm cổ phiếu tiềm năng trên web...\n"
+            # Determine candidate stocks based on query/profile
+            yield "Dang phan tich yeu cau tim kiem...\n"
+            candidate_symbols = self._get_candidate_symbols(user_query, investment_profile)
 
-            search_query = self._build_search_query(user_query, investment_profile)
-            web_results = await self.mcp_client.call_tool(
-                "gemini_search_and_summarize",
-                {
-                    "query": search_query,
-                    "use_search": True
-                }
-            )
+            yield f"[OK] Danh sach ung vien: {len(candidate_symbols)} co phieu\n"
 
-            # Step 2: Extract stock symbols from web results
-            yield "📊 Đang phân tích kết quả tìm kiếm...\n"
-            symbols = await self._extract_symbols_from_results(web_results)
+            # Step 1: Try discover_stocks_by_profile tool first
+            profile_results = None
+            try:
+                if investment_profile:
+                    profile_results = await self.mcp_client.call_tool(
+                        "discover_stocks_by_profile",
+                        {
+                            "investment_profile": investment_profile,
+                            "num_stocks": num_stocks * 2
+                        }
+                    )
+                    if profile_results.get("status") == "success":
+                        discovered = profile_results.get("stocks", [])
+                        if discovered:
+                            candidate_symbols = discovered + candidate_symbols
+            except (ValueError, Exception):
+                pass  # Tool not available
 
-            yield f"✅ Tìm thấy {len(symbols)} cổ phiếu được nhắc đến\n"
-
-            # Step 3: Get detailed TCBS data
-            yield "📈 Đang lấy dữ liệu chi tiết từ TCBS...\n"
-            tcbs_data = await self.mcp_client.call_tool(
-                "get_stock_details_from_tcbs",
-                {"symbols": symbols[:10]}  # Limit to 10
-            )
-
-            # Step 4: Get price data for validation
-            yield "💹 Đang kiểm tra dữ liệu giá...\n"
+            # Step 2: Get price data for validation
+            yield "Dang lay du lieu gia...\n"
             price_data = await self.mcp_client.call_tool(
                 "get_stock_data",
-                {"symbols": symbols[:10], "lookback_days": 30}
+                {"symbols": candidate_symbols[:10], "lookback_days": 30}
             )
 
-            # Step 5: Analyze and rank
-            yield "🎯 Đang phân tích và xếp hạng...\n"
-            ranked_stocks = await self._analyze_and_rank(
-                symbols=symbols[:10],
-                web_results=web_results,
-                tcbs_data=tcbs_data,
+            # Step 3: Get prediction data
+            yield "Dang lay du doan gia...\n"
+            prediction_data = None
+            try:
+                prediction_data = await self.mcp_client.call_tool(
+                    "get_stock_price_prediction",
+                    {"symbols": candidate_symbols[:10], "table_type": "3d"}
+                )
+            except Exception:
+                pass
+
+            # Step 4: Analyze and rank using AI
+            yield "Dang phan tich va xep hang...\n"
+            ranked_stocks = await self._analyze_and_rank_direct(
+                symbols=candidate_symbols[:10],
                 price_data=price_data,
+                prediction_data=prediction_data,
+                user_query=user_query,
                 num_recommendations=num_stocks
             )
 
             if shared_state is not None:
                 shared_state["discovered_stocks"] = ranked_stocks
 
-            # Step 6: Format and yield results
+            # Step 5: Format and yield results
             yield "\n" + "="*50 + "\n"
-            yield "🔍 **CỔ PHIẾU TIỀM NĂNG**\n"
+            yield "**CO PHIEU TIEM NANG**\n"
             yield "="*50 + "\n\n"
 
             formatted = self._format_discovery_results(
                 ranked_stocks=ranked_stocks,
-                web_summary=web_results.get("summary", ""),
-                total_found=len(symbols)
+                web_summary="Phan tich dua tren du lieu thi truong hien tai",
+                total_found=len(candidate_symbols)
             )
 
             yield formatted
 
         except Exception as e:
-            yield f"\n❌ Lỗi khi tìm kiếm cổ phiếu: {str(e)}"
+            yield f"\n[ERROR] Loi khi tim kiem co phieu: {str(e)}"
+            yield "\n**Khuyen nghi mac dinh:**\n"
+            yield self._get_default_recommendations(user_query)
+
+    def _get_candidate_symbols(self, user_query: str, profile: Optional[Dict]) -> List[str]:
+        """Get candidate stock symbols based on query/profile"""
+        query_lower = user_query.lower()
+
+        # Default blue chips
+        default_stocks = ["VCB", "FPT", "VNM", "HPG", "VIC", "MWG", "GAS", "MSN", "TCB", "VHM"]
+
+        # Sector-specific
+        if any(kw in query_lower for kw in ["ngan hang", "bank", "tai chinh"]):
+            return ["VCB", "TCB", "MBB", "ACB", "BID", "CTG", "STB", "HDB", "VPB", "TPB"]
+        elif any(kw in query_lower for kw in ["bat dong san", "bds", "dia oc"]):
+            return ["VHM", "VIC", "NVL", "KDH", "DXG", "HDG", "PDR", "NLG", "DIG", "CEO"]
+        elif any(kw in query_lower for kw in ["cong nghe", "tech", "it"]):
+            return ["FPT", "CMG", "ELC", "CTR", "VGI"]
+        elif any(kw in query_lower for kw in ["thep", "xay dung", "vat lieu"]):
+            return ["HPG", "HSG", "NKG", "TLH", "VGC", "CTD", "HBC", "VCG", "FCN", "HUT"]
+        elif any(kw in query_lower for kw in ["dien", "nang luong", "energy"]):
+            return ["GAS", "POW", "PVD", "PVS", "PLX", "BSR", "OIL", "PVC", "PVT", "REE"]
+        elif any(kw in query_lower for kw in ["tieu dung", "ban le", "retail"]):
+            return ["VNM", "MWG", "MSN", "PNJ", "DGW", "FRT", "HAX", "VGT", "SAB", "BHN"]
+
+        # Profile-based
+        if profile:
+            risk = profile.get("risk_tolerance", "medium")
+            if risk == "low":
+                return ["VCB", "VNM", "GAS", "FPT", "BID", "CTG", "HPG", "VIC", "PNJ", "REE"]
+            elif risk == "high":
+                return ["FPT", "MWG", "TCB", "VHM", "HPG", "MBB", "VPB", "STB", "VIC", "NVL"]
+
+        return default_stocks
+
+    async def _analyze_and_rank_direct(
+        self,
+        symbols: List[str],
+        price_data: Dict,
+        prediction_data: Optional[Dict],
+        user_query: str,
+        num_recommendations: int
+    ) -> List[Dict]:
+        """Analyze and rank stocks using AI without web search"""
+        # Build analysis prompt
+        prompt = f"""
+Dua tren du lieu sau, hay xep hang va chon top {num_recommendations} co phieu tiem nang nhat:
+
+**Yeu cau cua user:** {user_query}
+
+**Du lieu gia (30 ngay):**
+{str(price_data)[:2000]}
+
+**Du doan gia (3 ngay toi):**
+{str(prediction_data)[:1000] if prediction_data else "Khong co du lieu du doan"}
+
+**Cac symbols can phan tich:** {symbols}
+
+Hay phan tich va tra ve JSON format:
+{{
+    "stocks": [
+        {{
+            "symbol": "VCB",
+            "rank": 1,
+            "score": 9.5,
+            "reasons": ["reason1", "reason2", "reason3"],
+            "fundamentals_summary": "Ngan hang lon nhat, ROE cao, tang truong on dinh",
+            "technical_summary": "RSI = 60, xu huong tang, gia tren MA20"
+        }},
+        ...
+    ]
+}}
+
+Danh gia dua tren: xu huong gia, chi so ky thuat, tiem nang tang truong, do an toan.
+"""
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": "You are a Vietnamese stock analyst. Return only valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            response_format={"type": "json_object"}
+        )
+
+        result = json.loads(response.choices[0].message.content)
+        return result.get("stocks", [])
+
+    def _get_default_recommendations(self, user_query: str) -> str:
+        """Return default recommendations when discovery fails"""
+        query_lower = user_query.lower()
+
+        if any(kw in query_lower for kw in ["ngan hang", "bank"]):
+            stocks = ["VCB - Vietcombank (Blue chip)", "TCB - Techcombank (Tang truong)", "MBB - MB Bank (Hieu qua)"]
+        elif any(kw in query_lower for kw in ["cong nghe", "tech"]):
+            stocks = ["FPT - FPT Corp (Cong nghe hang dau)", "CMG - CMC Group (IT services)"]
+        else:
+            stocks = [
+                "VCB - Blue chip ngan hang",
+                "FPT - Blue chip cong nghe",
+                "VNM - Blue chip tieu dung",
+                "HPG - Blue chip thep",
+                "VIC - Blue chip bat dong san"
+            ]
+
+        return "\n".join([f"- {s}" for s in stocks])
 
     def _build_search_query(self, user_query: str, profile: Optional[Dict]) -> str:
         """Build search query based on user request and profile"""
@@ -337,39 +307,39 @@ Hãy tìm những cổ phiếu thực sự tiềm năng!
             horizon = profile.get("time_horizon", "medium")
 
             if risk == "low":
-                base_query += " blue chip ổn định"
+                base_query += " blue chip on dinh"
             elif risk == "high":
-                base_query += " tăng trưởng cao"
+                base_query += " tang truong cao"
 
             if horizon == "long":
-                base_query += " dài hạn"
+                base_query += " dai han"
 
-        return base_query + " Việt Nam 2025"
+        return base_query + " Viet Nam 2025"
 
     async def _extract_symbols_from_results(self, web_results: Dict) -> List[str]:
         """Extract stock symbols from web search results using AI"""
         prompt = f"""
-Phân tích kết quả search sau và trích xuất TẤT CẢ các mã cổ phiếu được nhắc đến:
+Phan tich ket qua search sau va trich xuat TAT CA cac ma co phieu duoc nhac den:
 
 {web_results.get("summary", "")}
 
-Trả về danh sách mã cổ phiếu dưới dạng JSON array:
+Tra ve danh sach ma co phieu duoi dang JSON array:
 {{"symbols": ["VCB", "FPT", ...]}}
 
-Chỉ trả về JSON, không giải thích.
+Chi tra ve JSON, khong giai thich.
 """
 
-        response = self.client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=[prompt],
-            config=types.GenerateContentConfig(
-                temperature=0.1,
-                response_mime_type="application/json"
-            )
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": "You are a JSON parser. Return only valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            response_format={"type": "json_object"}
         )
 
-        import json
-        result = json.loads(response.text)
+        result = json.loads(response.choices[0].message.content)
         return result.get("symbols", [])
 
     async def _analyze_and_rank(
@@ -381,20 +351,20 @@ Chỉ trả về JSON, không giải thích.
         num_recommendations: int
     ) -> List[Dict]:
         """Analyze and rank stocks using AI"""
-        # Use Gemini to analyze and rank
+        # Use OpenAI to analyze and rank
         prompt = f"""
-Dựa trên dữ liệu sau, hãy xếp hạng và chọn top {num_recommendations} cổ phiếu tiềm năng:
+Dua tren du lieu sau, hay xep hang va chon top {num_recommendations} co phieu tiem nang:
 
 **Web Research:**
 {web_results.get("summary", "")}
 
 **TCBS Data:**
-{str(tcbs_data)[:2000]}  # Limit length
+{str(tcbs_data)[:2000]}
 
 **Price Data:**
 {str(price_data)[:1000]}
 
-Trả về JSON format:
+Tra ve JSON format:
 {{
     "stocks": [
         {{
@@ -410,17 +380,17 @@ Trả về JSON format:
 }}
 """
 
-        response = self.client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=[prompt],
-            config=types.GenerateContentConfig(
-                temperature=0.3,
-                response_mime_type="application/json"
-            )
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": "You are a stock analyst. Return only valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            response_format={"type": "json_object"}
         )
 
-        import json
-        result = json.loads(response.text)
+        result = json.loads(response.choices[0].message.content)
         return result.get("stocks", [])
 
     def _format_discovery_results(
@@ -432,11 +402,11 @@ Trả về JSON format:
         """Format discovery results for output"""
         output = []
 
-        output.append(f"**Nguồn tìm kiếm:**")
-        output.append(f"- Web research: {total_found} cổ phiếu được nhắc đến")
-        output.append(f"- Final picks: Top {len(ranked_stocks)} khuyến nghị\n")
+        output.append(f"**Nguon tim kiem:**")
+        output.append(f"- Web research: {total_found} co phieu duoc nhac den")
+        output.append(f"- Final picks: Top {len(ranked_stocks)} khuyen nghi\n")
 
-        output.append("**TOP KHUYẾN NGHỊ:**\n")
+        output.append("**TOP KHUYEN NGHI:**\n")
 
         for stock in ranked_stocks:
             symbol = stock.get("symbol", "N/A")
@@ -444,12 +414,12 @@ Trả về JSON format:
             score = stock.get("score", 0)
             reasons = stock.get("reasons", [])
 
-            stars = "⭐" * min(5, int(score))
+            stars = "*" * min(5, int(score))
 
             output.append(f"**{rank}. {symbol}** {stars}")
-            output.append(f"**Điểm: {score}/10**\n")
+            output.append(f"**Diem: {score}/10**\n")
 
-            output.append("**Lý do:**")
+            output.append("**Ly do:**")
             for reason in reasons:
                 output.append(f"- {reason}")
 
@@ -457,7 +427,7 @@ Trả về JSON format:
             output.append(f"**Technical:** {stock.get('technical_summary', 'N/A')}\n")
             output.append("---\n")
 
-        output.append("\n💡 **Lưu ý:** Đây là kết quả phân tích tự động, cần nghiên cứu thêm trước khi đầu tư.")
+        output.append("\n**Luu y:** Day la ket qua phan tich tu dong, can nghien cuu them truoc khi dau tu.")
 
         return "\n".join(output)
 

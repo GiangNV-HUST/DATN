@@ -49,12 +49,4 @@ investment --> output
 discovery --> output
 prediction --> output
 
-note right of prediction
-  **NEW: Prediction Agent**
-  • Ensemble 5-model prediction
-  • Scenario handling (5 handlers)
-  • Time horizons: 3 days, 48 days
-  • MAPE: 1.99% (3d), 14.58% (48d)
-end note
-
 @enduml

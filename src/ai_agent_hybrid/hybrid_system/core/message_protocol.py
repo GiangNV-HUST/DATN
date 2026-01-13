@@ -164,8 +164,8 @@ class MessageBus:
             for handler in self.subscribers[agent_name]:
                 try:
                     handler(message)
-                except Exception as e:
-                    print(f"⚠️ Error delivering message to {agent_name}: {e}")
+                except Exception:
+                    pass  # Silently ignore delivery errors
 
     def get_history(
         self,

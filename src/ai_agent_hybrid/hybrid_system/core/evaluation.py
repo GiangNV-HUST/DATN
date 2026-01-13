@@ -2,14 +2,16 @@
 Evaluation & Arbitration Layer
 
 Implements quality assurance and conflict resolution for agent outputs.
+Updated: Now uses OpenAI instead of Gemini for consistency.
 """
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 from enum import Enum
 import os
+import json
 
-import google.generativeai as genai
+from openai import OpenAI
 
 
 class EvaluationAction(str, Enum):
@@ -33,7 +35,7 @@ class Evaluation:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __str__(self) -> str:
-        status = "✅ PASSED" if self.passed else "❌ FAILED"
+        status = "[OK] PASSED" if self.passed else "[X] FAILED"
         return f"{status} | Score: {self.score:.2f} | Action: {self.action.value}"
 
 
@@ -54,15 +56,16 @@ class CriticAgent:
     Evaluates quality of agent responses
 
     Checks for:
-    - Accuracy: Trả lời đúng câu hỏi không?
-    - Completeness: Đầy đủ thông tin không?
-    - Relevance: Liên quan đến query không?
-    - Hallucination: Có thông tin sai lệch không?
-    - Coherence: Mạch lạc không?
+    - Accuracy: Tra loi dung cau hoi khong?
+    - Completeness: Day du thong tin khong?
+    - Relevance: Lien quan den query khong?
+    - Hallucination: Co thong tin sai lech khong?
+    - Coherence: Mach lac khong?
     """
 
     def __init__(self):
-        self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
         self.evaluation_history: List[Dict] = []
 
     def evaluate(
@@ -92,33 +95,19 @@ class CriticAgent:
         )
 
         try:
-            # Call Gemini for evaluation
-            response = self.client.models.generate_content(
-                model='gemini-2.0-flash-exp',
-                contents=[prompt],
-                config=types.GenerateContentConfig(
-                    temperature=0.1,  # Low temperature for consistent evaluation
-                    response_mime_type="application/json",
-                    response_schema={
-                        "type": "object",
-                        "properties": {
-                            "accuracy_score": {"type": "number"},
-                            "completeness_score": {"type": "number"},
-                            "relevance_score": {"type": "number"},
-                            "hallucination_detected": {"type": "boolean"},
-                            "coherence_score": {"type": "number"},
-                            "overall_score": {"type": "number"},
-                            "issues": {"type": "array", "items": {"type": "string"}},
-                            "suggestions": {"type": "array", "items": {"type": "string"}},
-                            "reasoning": {"type": "string"}
-                        }
-                    }
-                )
+            # Call OpenAI for evaluation
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are an AI response quality evaluator. Return only valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,  # Low temperature for consistent evaluation
+                response_format={"type": "json_object"}
             )
 
             # Parse evaluation
-            import json
-            eval_result = json.loads(response.text)
+            eval_result = json.loads(response.choices[0].message.content)
 
             overall_score = eval_result.get("overall_score", 0.5)
             hallucination = eval_result.get("hallucination_detected", False)
@@ -175,7 +164,7 @@ class CriticAgent:
     ) -> str:
         """Build prompt for evaluation"""
         return f"""
-Bạn là một chuyên gia đánh giá chất lượng câu trả lời của AI agent.
+Ban la mot chuyen gia danh gia chat luong cau tra loi cua AI agent.
 
 **USER QUERY:**
 {user_query}
@@ -186,38 +175,40 @@ Bạn là một chuyên gia đánh giá chất lượng câu trả lời của A
 **EXECUTION CONTEXT:**
 {self._format_context(context)}
 
-Hãy đánh giá câu trả lời theo các tiêu chí sau (scale 0.0 - 1.0):
+Hay danh gia cau tra loi theo cac tieu chi sau (scale 0.0 - 1.0):
 
-1. **Accuracy** (Độ chính xác):
-   - Agent có trả lời đúng câu hỏi không?
-   - Thông tin có chính xác không?
+1. **Accuracy** (Do chinh xac):
+   - Agent co tra loi dung cau hoi khong?
+   - Thong tin co chinh xac khong?
 
-2. **Completeness** (Độ đầy đủ):
-   - Câu trả lời có đầy đủ thông tin cần thiết không?
-   - Có thiếu sót gì quan trọng không?
+2. **Completeness** (Do day du):
+   - Cau tra loi co day du thong tin can thiet khong?
+   - Co thieu sot gi quan trong khong?
 
-3. **Relevance** (Độ liên quan):
-   - Câu trả lời có liên quan trực tiếp đến câu hỏi không?
-   - Có thông tin thừa/không cần thiết không?
+3. **Relevance** (Do lien quan):
+   - Cau tra loi co lien quan truc tiep den cau hoi khong?
+   - Co thong tin thua/khong can thiet khong?
 
-4. **Hallucination** (Ảo giác):
-   - Agent có bịa ra thông tin không có trong context không?
-   - Có đưa ra con số/dữ liệu không chính xác không?
+4. **Hallucination** (Ao giac):
+   - Agent co bia ra thong tin khong co trong context khong?
+   - Co dua ra con so/du lieu khong chinh xac khong?
 
-5. **Coherence** (Mạch lạc):
-   - Câu trả lời có logic, dễ hiểu không?
-   - Có mâu thuẫn nội tại không?
+5. **Coherence** (Mach lac):
+   - Cau tra loi co logic, de hieu khong?
+   - Co mau thuan noi tai khong?
 
-Trả về đánh giá dưới dạng JSON với:
-- accuracy_score: 0.0-1.0
-- completeness_score: 0.0-1.0
-- relevance_score: 0.0-1.0
-- hallucination_detected: true/false
-- coherence_score: 0.0-1.0
-- overall_score: 0.0-1.0 (trung bình)
-- issues: [danh sách vấn đề phát hiện]
-- suggestions: [đề xuất cải thiện]
-- reasoning: "Giải thích chi tiết đánh giá"
+Tra ve danh gia duoi dang JSON voi:
+{{
+    "accuracy_score": 0.0-1.0,
+    "completeness_score": 0.0-1.0,
+    "relevance_score": 0.0-1.0,
+    "hallucination_detected": true/false,
+    "coherence_score": 0.0-1.0,
+    "overall_score": 0.0-1.0,
+    "issues": ["danh sach van de phat hien"],
+    "suggestions": ["de xuat cai thien"],
+    "reasoning": "Giai thich chi tiet danh gia"
+}}
 """
 
     def _format_context(self, context: Dict) -> str:
@@ -242,21 +233,21 @@ Trả về đánh giá dưới dạng JSON với:
         issues: List[str]
     ) -> EvaluationAction:
         """Determine what action to take based on evaluation"""
-        # Critical issues → Retry
+        # Critical issues -> Retry
         if hallucination:
             return EvaluationAction.RETRY
 
-        # Low score → Retry
+        # Low score -> Retry
         if score < 0.5:
             return EvaluationAction.RETRY
 
-        # Medium score → May need arbitration
+        # Medium score -> May need arbitration
         if score < 0.7:
             if len(issues) > 2:
                 return EvaluationAction.RETRY
             return EvaluationAction.ARBITRATE
 
-        # Good score → Accept
+        # Good score -> Accept
         return EvaluationAction.ACCEPT
 
     def get_stats(self) -> Dict:
@@ -288,13 +279,14 @@ class ArbitrationAgent:
     Resolves conflicts between multiple agent responses
 
     Scenarios:
-    1. AnalysisAgent says "MUA", ScreenerAgent says "BÁN"
+    1. AnalysisAgent says "MUA", ScreenerAgent says "BAN"
     2. Multiple discovery suggestions
     3. Different price predictions
     """
 
     def __init__(self):
-        self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
         self.arbitration_history: List[Dict] = []
 
     def arbitrate(
@@ -364,29 +356,17 @@ class ArbitrationAgent:
         prompt = self._build_arbitration_prompt(user_query, results, context)
 
         try:
-            response = self.client.models.generate_content(
-                model='gemini-2.5-flash-preview-04-17',
-                contents=[prompt],
-                config=types.GenerateContentConfig(
-                    temperature=0.3,
-                    response_mime_type="application/json",
-                    response_schema={
-                        "type": "object",
-                        "properties": {
-                            "final_decision": {"type": "string"},
-                            "reasoning": {"type": "string"},
-                            "confidence": {"type": "number"},
-                            "supporting_agents": {
-                                "type": "array",
-                                "items": {"type": "string"}
-                            }
-                        }
-                    }
-                )
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are an AI arbitrator that resolves conflicts between agent responses. Return only valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                response_format={"type": "json_object"}
             )
 
-            import json
-            arb_result = json.loads(response.text)
+            arb_result = json.loads(response.choices[0].message.content)
 
             decision = FinalDecision(
                 decision=arb_result.get("final_decision", ""),
@@ -422,7 +402,7 @@ class ArbitrationAgent:
         ])
 
         return f"""
-Bạn là chuyên gia trọng tài giải quyết mâu thuẫn giữa các AI agents.
+Ban la chuyen gia trong tai giai quyet mau thuan giua cac AI agents.
 
 **USER QUERY:**
 {user_query}
@@ -433,17 +413,19 @@ Bạn là chuyên gia trọng tài giải quyết mâu thuẫn giữa các AI ag
 **CONTEXT:**
 {self._format_context(context) if context else "No additional context"}
 
-Nhiệm vụ của bạn:
-1. Phân tích từng kết quả và độ tin cậy
-2. Xác định kết quả nào chính xác hơn
-3. Tổng hợp thành quyết định cuối cùng
-4. Giải thích lý do chi tiết
+Nhiem vu cua ban:
+1. Phan tich tung ket qua va do tin cay
+2. Xac dinh ket qua nao chinh xac hon
+3. Tong hop thanh quyet dinh cuoi cung
+4. Giai thich ly do chi tiet
 
-Trả về JSON với:
-- final_decision: Quyết định cuối cùng (câu trả lời đầy đủ)
-- reasoning: Giải thích tại sao chọn quyết định này
-- confidence: Độ tin cậy của quyết định (0.0-1.0)
-- supporting_agents: Danh sách agents hỗ trợ quyết định này
+Tra ve JSON voi:
+{{
+    "final_decision": "Quyet dinh cuoi cung (cau tra loi day du)",
+    "reasoning": "Giai thich tai sao chon quyet dinh nay",
+    "confidence": 0.0-1.0,
+    "supporting_agents": ["danh sach agents ho tro quyet dinh nay"]
+}}
 """
 
     def _format_context(self, context: Optional[Dict]) -> str:
@@ -476,6 +458,22 @@ Trả về JSON với:
         }
 
 
-# Global instances
-critic_agent = CriticAgent()
-arbitration_agent = ArbitrationAgent()
+# Global instances (lazy initialization to avoid import-time errors)
+critic_agent = None
+arbitration_agent = None
+
+
+def get_critic_agent():
+    """Get or create CriticAgent instance (lazy initialization)"""
+    global critic_agent
+    if critic_agent is None:
+        critic_agent = CriticAgent()
+    return critic_agent
+
+
+def get_arbitration_agent():
+    """Get or create ArbitrationAgent instance (lazy initialization)"""
+    global arbitration_agent
+    if arbitration_agent is None:
+        arbitration_agent = ArbitrationAgent()
+    return arbitration_agent

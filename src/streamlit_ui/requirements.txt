@@ -1,0 +1,17 @@
+# Streamlit UI Requirements
+
+# Core
+streamlit>=1.31.0
+streamlit-chat>=0.1.1
+
+# AI/LLM
+openai>=1.12.0
+
+# Visualization
+plotly>=5.18.0
+altair>=5.2.0
+pandas>=2.1.0
+
+# Additional utilities
+python-dotenv>=1.0.0
+pytz>=2023.3

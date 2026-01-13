@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'ai_agent
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from typing import Any, Dict, Optional
+from pathlib import Path
 import asyncio
 import hashlib
 import json
@@ -52,6 +53,7 @@ class EnhancedMCPClient:
         self.session: Optional[ClientSession] = None
         self.read_stream = None
         self.write_stream = None
+        self._streams_context = None  # Store context manager for cleanup
 
         # Available tools
         self.available_tools = []
@@ -78,20 +80,80 @@ class EnhancedMCPClient:
             "total_response_time": 0,
         }
 
+    @classmethod
+    async def create(cls, server_script_path: str = None, cache_ttl: int = 300):
+        """
+        Factory method to create and connect MCP client.
+
+        Args:
+            server_script_path: Path to MCP server script (auto-detect if None)
+            cache_ttl: Cache TTL in seconds
+
+        Returns:
+            Connected EnhancedMCPClient instance
+        """
+        # Auto-detect server script path if not provided
+        if server_script_path is None:
+            import os
+            # Assume server script is in src/ai_agent_mcp/server.py
+            current_dir = os.path.dirname(__file__)
+            server_script_path = os.path.join(current_dir, '..', '..', 'ai_agent_mcp', 'server.py')
+
+            # Fallback to simplified server path
+            if not os.path.exists(server_script_path):
+                server_script_path = os.path.join(current_dir, '..', '..', 'mcp_server', 'server.py')
+
+        # Create client instance
+        client = cls(server_script_path=server_script_path, cache_ttl=cache_ttl)
+
+        # Connect to server
+        await client.connect()
+
+        return client
+
     async def connect(self):
         """Connect to MCP server"""
         try:
-            # Create server parameters
+            # Get the project root (where src/ is located)
+            import sys
+            import os
+            project_root = Path(self.server_script_path).resolve().parent.parent.parent
+
+            # IMPORTANT: Ensure we have real stdout/stderr for subprocess creation
+            # When running inside Claude Desktop MCP, stdout/stderr might be redirected to StringIO
+            # which breaks subprocess creation (StringIO has no fileno())
+            real_stdout = sys.__stdout__
+            real_stderr = sys.__stderr__
+
+            # Temporarily restore real stdout/stderr for subprocess creation
+            original_stdout = sys.stdout
+            original_stderr = sys.stderr
+            sys.stdout = real_stdout if real_stdout is not None else original_stdout
+            sys.stderr = real_stderr if real_stderr is not None else original_stderr
+
+            # Prepare environment with PYTHONPATH set to project root
+            env = os.environ.copy()
+            env['PYTHONPATH'] = str(project_root)
+            env['PYTHONIOENCODING'] = 'utf-8'
+
+            # Create server parameters - run server.py directly (it has fallback imports)
             server_params = StdioServerParameters(
                 command="python",
                 args=["-u", self.server_script_path],
-                env=None
+                env=env
             )
 
-            # Start stdio communication
-            self.read_stream, self.write_stream = await stdio_client(server_params)
+            try:
+                # Start stdio communication - stdio_client returns async context manager
+                streams_context = stdio_client(server_params)
+                self.read_stream, self.write_stream = await streams_context.__aenter__()
+                self._streams_context = streams_context  # Store for cleanup
+            finally:
+                # Restore original stdout/stderr
+                sys.stdout = original_stdout
+                sys.stderr = original_stderr
 
-            # Initialize MCP session
+            # Initialize MCP session (no timeout - avoids anyio cancel scope issues)
             self.session = ClientSession(self.read_stream, self.write_stream)
             await self.session.initialize()
 
@@ -99,20 +161,28 @@ class EnhancedMCPClient:
             response = await self.session.list_tools()
             self.available_tools = response.tools
 
-            print(f"✅ Enhanced MCP Client connected. {len(self.available_tools)} tools available.")
-
+        except asyncio.TimeoutError:
+            raise
         except Exception as e:
-            print(f"❌ Failed to connect to MCP server: {e}")
+            import traceback
+            traceback.print_exc()
             raise
 
     async def disconnect(self):
         """Disconnect from MCP server"""
+        # Close the streams context manager first
+        if self._streams_context:
+            try:
+                await self._streams_context.__aexit__(None, None, None)
+            except Exception:
+                pass
+
+        # Then close the session
         if self.session:
             try:
                 await self.session.__aexit__(None, None, None)
-            except:
+            except Exception:
                 pass
-        print("✅ Enhanced MCP Client disconnected")
 
     def _get_cache_key(self, tool_name: str, arguments: Dict) -> str:
         """Generate cache key from tool name + arguments"""
@@ -229,7 +299,6 @@ class EnhancedMCPClient:
             if self.failure_count >= self.max_failures:
                 self.circuit_open = True
                 self.circuit_open_until = datetime.now() + timedelta(seconds=self.circuit_timeout)
-                print(f"⚠️ Circuit breaker OPENED. Will retry after {self.circuit_timeout}s")
 
             future.set_exception(e)
             raise
@@ -270,7 +339,6 @@ class EnhancedMCPClient:
 
                 if attempt < max_retries - 1:
                     wait_time = 2 ** attempt
-                    print(f"⚠️ Retry {attempt + 1}/{max_retries} after {wait_time}s: {e}")
                     await asyncio.sleep(wait_time)
                 else:
                     raise last_exception

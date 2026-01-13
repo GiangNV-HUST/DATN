@@ -7,15 +7,17 @@ Specialized in stock screening and filtering based on:
 - Custom criteria
 
 Based on OLD system's screener_agent.py pattern.
+Updated: Now uses OpenAI instead of Gemini for consistency.
 """
 
 import os
 import sys
+import json
 from typing import Dict, List, Optional, AsyncIterator
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'ai_agent_mcp'))
 
-import google.generativeai as genai
+from openai import OpenAI
 
 
 class ScreenerSpecialist:
@@ -36,175 +38,68 @@ class ScreenerSpecialist:
     """
 
     AGENT_INSTRUCTION = """
-Bạn là chuyên gia sàng lọc cổ phiếu Việt Nam.
+Ban la chuyen gia sang loc co phieu Viet Nam.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-## TOOLS CỦA BẠN (4 tools):
+## TOOLS CUA BAN (4 tools):
 
 1. **screen_stocks(conditions, exchanges, limit)**
-   - Sàng lọc cổ phiếu với 80+ tiêu chí
+   - Sang loc co phieu voi 80+ tieu chi
    - conditions: {"roe": ">15", "pe": "<15", ...}
    - exchanges: ["HSX", "HNX", "UPCOM"]
-   - limit: Số lượng kết quả (default: 20)
+   - limit: So luong ket qua (default: 20)
 
 2. **get_screener_columns()**
-   - Lấy danh sách tất cả tiêu chí có thể lọc
-   - Hữu ích khi user hỏi "lọc được theo gì?"
+   - Lay danh sach tat ca tieu chi co the loc
+   - Huu ich khi user hoi "loc duoc theo gi?"
 
 3. **filter_stocks_by_criteria(stocks, criteria)**
-   - Lọc thêm sau khi screen
-   - Ví dụ: Lọc những cổ phiếu có thanh khoản cao
+   - Loc them sau khi screen
+   - Vi du: Loc nhung co phieu co thanh khoan cao
 
 4. **rank_stocks_by_score(stocks, ranking_method)**
-   - Xếp hạng cổ phiếu
+   - Xep hang co phieu
    - ranking_method: "composite", "value", "growth", "quality"
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-## TIÊU CHÍ SCREENING PHỔ BIẾN:
+## TIEU CHI SCREENING PHO BIEN:
 
 ### Financial Metrics:
-- **roe**: Return on Equity (%) - Khả năng sinh lời
-- **pe**: Price-to-Earnings - Định giá
-- **pb**: Price-to-Book - Định giá theo sổ sách
+- **roe**: Return on Equity (%) - Kha nang sinh loi
+- **pe**: Price-to-Earnings - Dinh gia
+- **pb**: Price-to-Book - Dinh gia theo so sach
 - **eps**: Earnings Per Share
-- **eps_growth_1y**: Tăng trưởng EPS 1 năm
-- **revenue_growth_1y**: Tăng trưởng doanh thu
-- **profit_last_4q**: Lợi nhuận 4 quý gần nhất
-- **net_margin**: Tỷ suất lợi nhuận ròng
+- **eps_growth_1y**: Tang truong EPS 1 nam
+- **revenue_growth_1y**: Tang truong doanh thu
+- **profit_last_4q**: Loi nhuan 4 quy gan nhat
+- **net_margin**: Ty suat loi nhuan rong
 
 ### Technical Indicators:
-- **rsi14**: RSI 14 ngày
-- **price_growth_1w/1m**: Tăng trưởng giá
-- **price_vs_sma20/50**: Giá so với MA
+- **rsi14**: RSI 14 ngay
+- **price_growth_1w/1m**: Tang truong gia
+- **price_vs_sma20/50**: Gia so voi MA
 - **macd_histogram**: MACD histogram
 
 ### Trading Metrics:
-- **market_cap**: Vốn hóa thị trường
-- **avg_trading_value_20d**: Giá trị giao dịch TB
-- **foreign_transaction**: Giao dịch nước ngoài
+- **market_cap**: Von hoa thi truong
+- **avg_trading_value_20d**: Gia tri giao dich TB
+- **foreign_transaction**: Giao dich nuoc ngoai
 
 ### Operators:
 - `>`, `<`, `>=`, `<=`, `==`, `!=`
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## LUU Y:
 
-## WORKFLOW EXAMPLES:
+- Uu tien co phieu co thanh khoan cao (avg_trading_value_20d > 5)
+- Khong loc qua strict -> 0 ket qua
+- Su dung 2-4 tieu chi chinh, tranh qua nhieu
+- Giai thich tai sao chon cac tieu chi nay
 
-### 1. Value Stocks (Cổ phiếu giá trị):
-```
-User: "Tìm cổ phiếu ROE > 15% và P/E < 15"
-
-Step 1: screen_stocks(
-    conditions={"roe": ">15", "pe": "<15"},
-    limit=20
-)
-Step 2: rank_stocks_by_score(results, "value")
-Step 3: Trình bày top 5-10 cổ phiếu
-```
-
-### 2. Growth Stocks (Cổ phiếu tăng trưởng):
-```
-User: "Cổ phiếu có tăng trưởng doanh thu và lợi nhuận cao"
-
-Step 1: screen_stocks(
-    conditions={
-        "revenue_growth_1y": ">20",
-        "eps_growth_1y": ">15"
-    }
-)
-Step 2: rank_stocks_by_score(results, "growth")
-Step 3: Trình bày
-```
-
-### 3. Technical Breakout (Đột phá kỹ thuật):
-```
-User: "Cổ phiếu đang breakout"
-
-Step 1: screen_stocks(
-    conditions={
-        "price_vs_sma20": "==Giá cắt lên SMA(20)",
-        "rsi14": "<70",
-        "avg_trading_value_20d": ">10"
-    }
-)
-Step 2: filter_stocks_by_criteria(high volume)
-Step 3: Trình bày
-```
-
-### 4. Abstract Query (Truy vấn trừu tượng):
-```
-User: "Cổ phiếu tốt để đầu tư dài hạn"
-
-→ Tự phân tích và chọn tiêu chí phù hợp:
-conditions = {
-    "roe": ">15",           # Sinh lời tốt
-    "pe": "<20",            # Định giá hợp lý
-    "revenue_growth_1y": ">10",  # Tăng trưởng ổn định
-    "market_cap": ">1000"   # Vốn hóa đủ lớn
-}
-```
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-## OUTPUT FORMAT:
-
-```
-🔍 **Kết quả sàng lọc**
-
-**Tiêu chí:**
-- ROE > 15%
-- P/E < 15
-- Market cap > 1,000 tỷ
-
-**Tìm thấy: 12 cổ phiếu**
-
-**Top 5 khuyến nghị:**
-
-1. **VCB** (HSX) - Ngân hàng
-   • ROE: 18.5% | P/E: 12.3
-   • Market cap: 150,000 tỷ
-   • GTGD TB 20 phiên: 1,200 tỷ
-
-2. **FPT** (HSX) - Công nghệ
-   • ROE: 22.1% | P/E: 14.8
-   • Market cap: 80,000 tỷ
-   • GTGD TB 20 phiên: 800 tỷ
-
-3. **HPG** (HSX) - Thép
-   • ROE: 16.8% | P/E: 11.5
-   • Market cap: 120,000 tỷ
-   • GTGD TB 20 phiên: 950 tỷ
-
-[...]
-
-💡 **Lưu ý:** Đây là kết quả sàng lọc định lượng. Cần phân tích thêm trước khi quyết định đầu tư.
-```
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-## LƯU Ý:
-
-✅ DO:
-- Ưu tiên cổ phiếu có thanh khoản cao (avg_trading_value_20d > 5)
-- Không lọc quá strict → 0 kết quả
-- Sử dụng 2-4 tiêu chí chính, tránh quá nhiều
-- Giải thích tại sao chọn các tiêu chí này
-
-❌ DON'T:
-- Đừng lọc với quá nhiều điều kiện (> 5)
-- Đừng recommend cổ phiếu kém thanh khoản
-- Đừng bỏ qua market cap và liquidity
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Hãy tìm những cổ phiếu tốt nhất cho user!
+Hay tim nhung co phieu tot nhat cho user!
 """
 
     def __init__(self, mcp_client):
         self.mcp_client = mcp_client
-        self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
         self.stats = {
             "total_screenings": 0,
@@ -233,12 +128,13 @@ Hãy tìm những cổ phiếu tốt nhất cho user!
             # Parse criteria from query
             criteria = await self._parse_criteria(user_query)
 
-            # Screen stocks
+            # Screen stocks (params: conditions, sort_by, ascending, limit)
             results = await self.mcp_client.call_tool(
                 "screen_stocks",
                 {
                     "conditions": criteria,
-                    "exchanges": ["HSX", "HNX", "UPCOM"],
+                    "sort_by": "avg_trading_value_20d",
+                    "ascending": False,
                     "limit": 20
                 }
             )
@@ -248,62 +144,143 @@ Hãy tìm những cổ phiếu tốt nhất cho user!
 
             # Format and yield results
             formatted = self._format_results(results, criteria)
-            yield formatted
+
+            # If no results found, try with relaxed criteria or fallback
+            if "Khong tim thay" in formatted or results.get("status") != "success":
+                yield "Dang thu voi tieu chi rong hon...\n"
+                # Try with empty/relaxed criteria for top stocks by liquidity
+                fallback_results = await self.mcp_client.call_tool(
+                    "screen_stocks",
+                    {
+                        "conditions": {},  # Empty = get all, sorted by trading value
+                        "sort_by": "avg_trading_value_20d",
+                        "ascending": False,
+                        "limit": 20
+                    }
+                )
+
+                if fallback_results.get("status") == "success" and fallback_results.get("results"):
+                    formatted = self._format_results(fallback_results, {"thanh_khoan": "cao nhat"})
+                    yield formatted
+                else:
+                    # Ultimate fallback - recommend default blue chips
+                    yield self._get_default_recommendations(user_query)
+            else:
+                yield formatted
 
         except Exception as e:
-            yield f"❌ Lỗi khi sàng lọc: {str(e)}"
+            # Fallback when API fails
+            yield f"[WARNING] Khong the ket noi API sang loc. Dua ra khuyen nghi mac dinh.\n\n"
+            yield self._get_default_recommendations(user_query)
+
+    def _get_default_recommendations(self, user_query: str) -> str:
+        """Return default stock recommendations when screening fails"""
+        query_lower = user_query.lower()
+
+        # Determine category from query
+        if any(kw in query_lower for kw in ["ngan hang", "bank", "tài chính", "tai chinh"]):
+            stocks = [
+                ("VCB", "Vietcombank", "Ngan hang lon nhat"),
+                ("TCB", "Techcombank", "Tang truong manh"),
+                ("MBB", "MB Bank", "Hieu qua cao"),
+                ("ACB", "ACB", "On dinh"),
+                ("BID", "BIDV", "Quy mo lon")
+            ]
+            category = "Ngan hang"
+        elif any(kw in query_lower for kw in ["bat dong san", "bds", "địa ốc", "dia oc"]):
+            stocks = [
+                ("VHM", "Vinhomes", "BDS lon nhat"),
+                ("VIC", "Vingroup", "Tap doan da nganh"),
+                ("NVL", "Novaland", "BDS tiem nang"),
+                ("KDH", "Khang Dien", "BDS TP.HCM"),
+                ("DXG", "Dat Xanh", "BDS pho thong")
+            ]
+            category = "Bat dong san"
+        elif any(kw in query_lower for kw in ["cong nghe", "tech", "it", "phần mềm", "phan mem"]):
+            stocks = [
+                ("FPT", "FPT Corp", "Cong nghe hang dau"),
+                ("CMG", "CMC Group", "IT services"),
+                ("ELC", "Elcom", "Cong nghe vien thong"),
+            ]
+            category = "Cong nghe"
+        else:
+            # Default blue chips
+            stocks = [
+                ("VCB", "Vietcombank", "Blue chip ngan hang"),
+                ("FPT", "FPT Corp", "Blue chip cong nghe"),
+                ("VNM", "Vinamilk", "Blue chip tieu dung"),
+                ("HPG", "Hoa Phat", "Blue chip thep"),
+                ("VIC", "Vingroup", "Blue chip BDS"),
+                ("MWG", "The Gioi Di Dong", "Blue chip ban le"),
+                ("GAS", "PV Gas", "Blue chip nang luong"),
+                ("MSN", "Masan", "Blue chip tieu dung"),
+                ("TCB", "Techcombank", "Blue chip ngan hang"),
+                ("VHM", "Vinhomes", "Blue chip BDS")
+            ]
+            category = "Blue chip"
+
+        output = [f"**Top co phieu {category} duoc khuyen nghi:**\n"]
+
+        for i, (ticker, name, note) in enumerate(stocks[:10], 1):
+            output.append(f"{i}. **{ticker}** - {name}")
+            output.append(f"   - {note}\n")
+
+        output.append("\n**Luu y:** Day la khuyen nghi mac dinh khi API khong kha dung.")
+        output.append("Su dung lenh phan tich de xem chi tiet tung co phieu.")
+
+        return "\n".join(output)
 
     async def _parse_criteria(self, user_query: str) -> Dict[str, str]:
         """Parse screening criteria from natural language query"""
-        # Use Gemini to parse criteria
+        # Use OpenAI to parse criteria
         prompt = f"""
-Phân tích yêu cầu sau và trả về tiêu chí sàng lọc dưới dạng JSON:
+Phan tich yeu cau sau va tra ve tieu chi sang loc duoi dang JSON:
 
 User query: "{user_query}"
 
-Trả về format:
+Tra ve format:
 {{
     "roe": ">15",
     "pe": "<15",
     ...
 }}
 
-Chỉ trả về JSON, không giải thích.
+Chi tra ve JSON, khong giai thich.
 """
 
-        response = self.client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=[prompt],
-            config=types.GenerateContentConfig(
-                temperature=0.1,
-                response_mime_type="application/json"
-            )
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": "You are a JSON parser. Return only valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            response_format={"type": "json_object"}
         )
 
-        import json
-        return json.loads(response.text)
+        return json.loads(response.choices[0].message.content)
 
     def _format_results(self, results: Dict, criteria: Dict) -> str:
         """Format screening results for output"""
         if results.get("status") != "success":
-            return f"❌ {results.get('message', 'Unknown error')}"
+            return f"[ERROR] {results.get('message', 'Unknown error')}"
 
         stocks = results.get("results", [])
         if not stocks:
-            return "📭 Không tìm thấy cổ phiếu phù hợp với tiêu chí."
+            return "Khong tim thay co phieu phu hop voi tieu chi."
 
         # Build output
-        output = ["🔍 **Kết quả sàng lọc**\n"]
+        output = ["**Ket qua sang loc**\n"]
 
         # Show criteria
-        output.append("**Tiêu chí:**")
+        output.append("**Tieu chi:**")
         for key, value in criteria.items():
             output.append(f"- {key} {value}")
 
-        output.append(f"\n**Tìm thấy: {len(stocks)} cổ phiếu**\n")
+        output.append(f"\n**Tim thay: {len(stocks)} co phieu**\n")
 
         # Show top picks
-        output.append("**Top khuyến nghị:**\n")
+        output.append("**Top khuyen nghi:**\n")
 
         for i, stock in enumerate(stocks[:10], 1):
             ticker = stock.get("ticker", "N/A")
@@ -312,10 +289,10 @@ Chỉ trả về JSON, không giải thích.
 
             output.append(
                 f"{i}. **{ticker}** ({exchange}) - {industry}\n"
-                f"   • Các chỉ số: [Hiển thị từ data]\n"
+                f"   - Cac chi so: [Hien thi tu data]\n"
             )
 
-        output.append("\n💡 **Lưu ý:** Đây là kết quả sàng lọc định lượng.")
+        output.append("\n**Luu y:** Day la ket qua sang loc dinh luong.")
 
         return "\n".join(output)
 

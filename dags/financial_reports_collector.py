@@ -358,5 +358,7 @@ yearly_tasks = [
     task_ratios_yearly,
 ]
 
-# Quarterly tasks chạy trước, yearly tasks chạy sau
-quarterly_tasks >> yearly_tasks
+# Quarterly tasks và yearly tasks chạy song song (không phụ thuộc nhau)
+# Nếu muốn chạy tuần tự, dùng chain:
+# from airflow.models.baseoperator import chain
+# chain(*quarterly_tasks, *yearly_tasks)

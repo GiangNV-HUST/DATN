@@ -1,12 +1,16 @@
 """
-Orchestrator module for Hybrid Stock Agent System
+Multi-Agent Orchestrator module
+
+Provides:
+- MultiAgentOrchestrator: Main orchestrator with 8 specialist agents
+- SpecialistRouter: AI-powered routing to appropriate specialist
 """
 
-from .ai_router import AIRouter, AIRoutingDecision
-from .main_orchestrator import HybridOrchestrator
+from .multi_agent_orchestrator import MultiAgentOrchestrator
+from .specialist_router import SpecialistRouter, SpecialistRoutingDecision
 
 __all__ = [
-    'AIRouter',
-    'AIRoutingDecision',
-    'HybridOrchestrator',
+    'MultiAgentOrchestrator',
+    'SpecialistRouter',
+    'SpecialistRoutingDecision',
 ]

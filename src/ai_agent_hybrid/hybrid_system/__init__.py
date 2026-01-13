@@ -1,22 +1,20 @@
 """
-Hybrid System module
+Hybrid Multi-Agent System
 
-NOTE: Orchestrator and Agents are commented out to avoid importing
-Google AI SDK dependencies when only database client is needed.
-Uncomment when you need the full hybrid system.
+This module provides the Multi-Agent Orchestrator with 8 Specialist Agents:
+1. AnalysisSpecialist - Stock analysis (technical, fundamental)
+2. ScreenerSpecialist - Stock screening and filtering
+3. AlertManager - Price alert management
+4. InvestmentPlanner - Investment planning
+5. DiscoverySpecialist - Stock discovery
+6. SubscriptionManager - Subscription management
+7. MarketContextSpecialist - Market overview (VN-Index, sectors)
+8. ComparisonSpecialist - Stock comparison
 """
 
-# Commented out to avoid heavy dependencies when only database is needed
-# from .orchestrator import HybridOrchestrator, AIRouter
-# from .agents import OrchestratorAgent, MCPToolWrapper
-# from .executors import DirectExecutor
+from .orchestrator import MultiAgentOrchestrator, SpecialistRouter
 
-# __all__ = [
-#     'HybridOrchestrator',
-#     'AIRouter',
-#     'OrchestratorAgent',
-#     'MCPToolWrapper',
-#     'DirectExecutor',
-# ]
-
-__all__ = []
+__all__ = [
+    'MultiAgentOrchestrator',
+    'SpecialistRouter',
+]

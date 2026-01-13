@@ -1,13 +1,21 @@
 """
-Discord Bot for AI Agent Hybrid System
+Discord Bot for AI Agent Multi-Specialist System
 
 Features:
-- Dual-mode execution (AI routing automatically)
-- Smart query processing with specialized agents
+- Multi-Agent Architecture with 6 Specialized Agents
+- Smart query processing with MultiAgentOrchestrator
 - Real-time streaming responses
 - Interactive embeds with buttons
 - User conversation memory
 - Performance metrics display
+
+UPGRADED: Now uses MultiAgentOrchestrator with 6 Specialists:
+- AnalysisSpecialist
+- ScreenerSpecialist
+- AlertManager
+- InvestmentPlanner
+- DiscoverySpecialist
+- SubscriptionManager
 """
 
 import discord
@@ -29,7 +37,8 @@ load_dotenv(os.path.join(final_root, '.env'))
 sys.path.insert(0, final_root)
 sys.path.insert(0, os.path.dirname(__file__))
 
-from hybrid_system.database import get_database_client
+# UPGRADED: Use MultiAgentOrchestrator with 6 Specialists
+from hybrid_system.orchestrator.multi_agent_orchestrator import MultiAgentOrchestrator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,10 +49,11 @@ logger = logging.getLogger(__name__)
 
 class HybridStockBot(commands.Bot):
     """
-    Discord Bot powered by Hybrid AI Agent System
+    Discord Bot powered by Multi-Agent System with 6 Specialists
 
     Features:
-    - AI-powered query routing (agent vs direct mode)
+    - 6 Specialized AI Agents (Analysis, Screener, Alert, Investment, Discovery, Subscription)
+    - Smart routing to appropriate specialist
     - Streaming responses with real-time updates
     - Interactive UI with buttons
     - Conversation memory per user
@@ -63,9 +73,8 @@ class HybridStockBot(commands.Bot):
             help_command=None
         )
 
-        # Initialize database client
-        self.db = get_database_client()
-        logger.info("Database client initialized")
+        # Initialize MultiAgentOrchestrator (will be done in setup_hook)
+        self.orchestrator: Optional[MultiAgentOrchestrator] = None
 
         # Conversation memory (user_id -> conversation_id)
         self.user_conversations: Dict[int, str] = {}
@@ -82,7 +91,18 @@ class HybridStockBot(commands.Bot):
             "start_time": datetime.now()
         }
 
-        logger.info("Hybrid Stock Bot initialized")
+        logger.info("Multi-Agent Stock Bot initialized")
+
+    async def setup_hook(self):
+        """Called when bot is setting up - initialize async components"""
+        logger.info("Initializing MultiAgentOrchestrator with 6 Specialists...")
+        try:
+            self.orchestrator = MultiAgentOrchestrator(use_direct_client=True)
+            await self.orchestrator.initialize()
+            logger.info(f"MultiAgentOrchestrator initialized with {len(self.orchestrator.specialists)} specialists!")
+        except Exception as e:
+            logger.error(f"Failed to initialize orchestrator: {e}")
+            raise
 
     async def on_ready(self):
         """Called when bot is ready"""
@@ -118,8 +138,8 @@ class HybridStockBot(commands.Bot):
 
         if not content:
             await message.reply(
-                "Xin chao! Toi la bot phan tich chung khoan voi AI. "
-                "Ban can giup gi? Dung `!help` de xem huong dan."
+                "Xin chào! Tôi là bot phân tích chứng khoán với AI. "
+                "Bạn cần giúp gì? Dùng `!help` để xem hướng dẫn."
             )
             return
 
@@ -134,20 +154,20 @@ class HybridStockBot(commands.Bot):
         mode: str = "auto"
     ):
         """
-        Process user query with Hybrid System
+        Process user query with MultiAgentOrchestrator
 
         Args:
             ctx: Discord context (message or command context)
             query: User's question
             is_mention: Whether this is from @mention
-            mode: Execution mode (auto/agent/direct)
+            mode: Execution mode (auto - routes to appropriate specialist)
         """
         # Get user ID
         user_id = str(ctx.author.id)
 
         # Check if user already has active query
         if user_id in self.active_queries:
-            await ctx.reply("Ban dang co truy van dang xu ly. Vui long doi...")
+            await ctx.reply("Bạn đang có truy vấn đang xử lý. Vui lòng đợi...")
             return
 
         # Mark as active
@@ -163,47 +183,90 @@ class HybridStockBot(commands.Bot):
 
             # Send initial response
             if is_mention:
-                status_msg = await ctx.reply("Dang xu ly truy van cua ban...")
+                status_msg = await ctx.reply("⏳ Đang xử lý truy vấn của bạn...")
             else:
-                status_msg = await ctx.send("Dang xu ly...")
+                status_msg = await ctx.send("⏳ Đang xử lý...")
 
-            # For now, use simple database query (until AIRouter is fixed)
-            # TODO: Integrate with HybridOrchestrator when AIRouter API is updated
+            # Process with MultiAgentOrchestrator (6 Specialists)
+            full_response = []
+            tools_used = []
+            specialist_used = None
+            start_time = datetime.now()
 
-            # Detect query type and route appropriately
-            query_lower = query.lower()
+            try:
+                async for event in self.orchestrator.process_query(
+                    user_query=query,
+                    user_id=user_id,
+                    mode=mode,
+                    session_id=conversation_id
+                ):
+                    event_type = event.get("type", "")
 
-            # Simple routing logic
-            if any(word in query_lower for word in ['giá', 'gia', 'price']):
-                response = await self.handle_price_query(query)
-            elif any(word in query_lower for word in ['phân tích', 'phan tich', 'analyze', 'analysis']):
-                response = await self.handle_analysis_query(query)
-            elif any(word in query_lower for word in ['tìm', 'tim', 'find', 'screener']):
-                response = await self.handle_screener_query(query)
-            elif any(word in query_lower for word in ['đầu tư', 'dau tu', 'invest', 'khuyến nghị', 'khuyen nghi']):
-                response = await self.handle_investment_query(query)
-            else:
-                # Default: treat as general question
-                response = await self.handle_general_query(query)
+                    if event_type == "routing_decision":
+                        # Capture which specialist was used
+                        specialist_used = event.get("data", {}).get("specialist", "Unknown")
+
+                    elif event_type == "chunk":
+                        chunk_data = event.get("data", "")
+                        if isinstance(chunk_data, dict):
+                            full_response.append(chunk_data.get("response", ""))
+                            if "tools_used" in chunk_data:
+                                tools_used = chunk_data.get("tools_used", [])
+                        else:
+                            full_response.append(str(chunk_data))
+
+                    elif event_type == "complete":
+                        data = event.get("data", {})
+                        if isinstance(data, dict):
+                            if "response" in data:
+                                full_response = [data.get("response", "")]
+                            tools_used = data.get("tools_used", tools_used)
+
+                    elif event_type == "error":
+                        error_msg = event.get("data", "Unknown error")
+                        full_response.append(f"❌ Lỗi: {error_msg}")
+
+                response = "".join(full_response)
+
+            except Exception as e:
+                logger.error(f"Error in orchestrator: {e}")
+                response = f"❌ Lỗi xử lý: {str(e)}"
+
+            # Calculate processing time
+            elapsed_time = (datetime.now() - start_time).total_seconds()
 
             # Update statistics
             self.stats["total_queries"] += 1
-            self.stats["direct_mode"] += 1  # Since we're using direct mode for now
+            if specialist_used:
+                self.stats["agent_mode"] += 1
+            else:
+                self.stats["direct_mode"] += 1
+
+            # Format response with metadata
+            footer = f"\n\n---\n⏱️ {elapsed_time:.1f}s"
+            if specialist_used:
+                footer += f" | 🤖 {specialist_used}"
+            if tools_used:
+                footer += f" | 🔧 {', '.join(tools_used[:3])}"
+
+            response_with_footer = response + footer
 
             # Send response with interactive buttons
             view = QueryResponseView(self, query, user_id)
 
             # Edit status message with result
-            if len(response) <= 2000:
-                await status_msg.edit(content=response, view=view)
+            if len(response_with_footer) <= 2000:
+                await status_msg.edit(content=response_with_footer, view=view)
             else:
                 # Split long messages
-                await status_msg.edit(content=response[:2000])
-                remaining = response[2000:]
+                await status_msg.edit(content=response[:1900] + "...")
+                remaining = response[1900:]
                 while remaining:
-                    chunk = remaining[:2000]
+                    chunk = remaining[:1900]
+                    if len(remaining) <= 1900:
+                        chunk += footer
                     await ctx.send(chunk)
-                    remaining = remaining[2000:]
+                    remaining = remaining[1900:]
                 # Add view to last message
                 await ctx.send("---", view=view)
 
@@ -211,193 +274,21 @@ class HybridStockBot(commands.Bot):
             logger.error(f"Error processing query: {e}", exc_info=True)
             self.stats["errors"] += 1
 
-            error_msg = "Loi khi xu ly truy van. Vui long thu lai."
+            error_msg = "❌ Lỗi khi xử lý truy vấn. Vui lòng thử lại."
             if "quota" in str(e).lower():
-                error_msg = "API quota vuot muc. Vui long thu lai sau."
+                error_msg = "❌ API quota vượt mức. Vui lòng thử lại sau."
 
-            await ctx.send(f"{error_msg}")
+            await ctx.send(error_msg)
 
         finally:
             # Remove from active queries
             self.active_queries.discard(user_id)
 
-    async def handle_price_query(self, query: str) -> str:
-        """Handle price-related queries"""
-        # Extract ticker from query
-        ticker = self.extract_ticker(query)
-
-        if not ticker:
-            return "Vui long chi ro ma chung khoan. Vi du: 'gia VCB'"
-
-        # Get latest price
-        price_data = self.db.get_latest_price(ticker)
-
-        if not price_data:
-            return f"Khong tim thay du lieu cho {ticker}"
-
-        # Format response
-        response = f"**{ticker} - Gia hien tai**\n\n"
-        response += f"Gia dong cua: **{price_data['close']:,.0f} VND**\n"
-
-        if price_data.get('change_percent'):
-            change = price_data['change_percent']
-            emoji = "📈" if change > 0 else "📉" if change < 0 else "➡️"
-            response += f"Thay doi: {emoji} {change:+.2f}%\n"
-
-        if price_data.get('rsi'):
-            rsi = price_data['rsi']
-            rsi_status = "Qua mua" if rsi > 70 else "Qua ban" if rsi < 30 else "Trung binh"
-            response += f"RSI: {rsi:.1f} ({rsi_status})\n"
-
-        if price_data.get('ma20'):
-            response += f"MA20: {price_data['ma20']:,.0f} VND\n"
-
-        return response
-
-    async def handle_analysis_query(self, query: str) -> str:
-        """Handle analysis queries"""
-        ticker = self.extract_ticker(query)
-
-        if not ticker:
-            return "Vui long chi ro ma chung khoan can phan tich."
-
-        # Get comprehensive data
-        price_data = self.db.get_latest_price(ticker)
-        history = self.db.get_price_history(ticker, days=30)
-
-        if not price_data:
-            return f"Khong tim thay du lieu cho {ticker}"
-
-        response = f"**PHAN TICH {ticker}**\n\n"
-
-        # Current price
-        response += f"Gia hien tai: **{price_data['close']:,.0f} VND**\n\n"
-
-        # Technical indicators
-        response += "**CHI BAO KY THUAT:**\n"
-        if price_data.get('rsi'):
-            rsi = price_data['rsi']
-            response += f"- RSI: {rsi:.1f}"
-            if rsi > 70:
-                response += " (QUA MUA - can luu y)\n"
-            elif rsi < 30:
-                response += " (QUA BAN - co the la co hoi)\n"
-            else:
-                response += " (Trung binh)\n"
-
-        if price_data.get('macd'):
-            response += f"- MACD: {price_data['macd']:.2f}\n"
-
-        # Price trend
-        if history and len(history) >= 5:
-            response += f"\n**XU HUONG GIA:**\n"
-            recent_prices = [h['close'] for h in history[:5]]
-            trend = "Tang" if recent_prices[0] > recent_prices[-1] else "Giam"
-            response += f"- 5 ngay gan day: {trend}\n"
-
-        response += f"\n_Du lieu cap nhat: {price_data.get('date', 'N/A')}_"
-
-        return response
-
-    async def handle_screener_query(self, query: str) -> str:
-        """Handle stock screening queries"""
-        # Parse criteria from query
-        criteria = {}
-
-        query_lower = query.lower()
-
-        if 'rsi' in query_lower:
-            if 'thấp' in query_lower or 'thap' in query_lower or 'low' in query_lower:
-                criteria['rsi_below'] = 40
-            elif 'cao' in query_lower or 'high' in query_lower:
-                criteria['rsi_above'] = 60
-
-        if 'pe' in query_lower:
-            if 'thấp' in query_lower or 'thap' in query_lower or 'low' in query_lower:
-                criteria['pe_below'] = 15
-
-        # Default: find undervalued stocks
-        if not criteria:
-            criteria = {
-                'rsi_below': 50,
-                'limit': 10
-            }
-
-        # Search stocks
-        stocks = self.db.search_stocks_by_criteria(criteria)
-
-        if not stocks or len(stocks) == 0:
-            return "Khong tim thay co phieu nao phu hop voi tieu chi."
-
-        response = f"**TIM THAY {len(stocks)} CO PHIEU:**\n\n"
-
-        for i, stock in enumerate(stocks[:10], 1):
-            ticker = stock.get('ticker', 'N/A')
-            price = stock.get('close', 0)
-            rsi = stock.get('rsi', 0)
-
-            response += f"{i}. **{ticker}**: {price:,.0f} VND"
-            if rsi:
-                response += f" | RSI: {rsi:.1f}"
-            response += "\n"
-
-        return response
-
-    async def handle_investment_query(self, query: str) -> str:
-        """Handle investment recommendation queries"""
-        # This is a placeholder - will be enhanced when AIRouter is fixed
-        response = "**TU VAN DAU TU**\n\n"
-        response += "Chuc nang nay dang duoc nang cap voi AI Router.\n"
-        response += "Hien tai, ban co the dung cac lenh:\n"
-        response += "- `!recommend <so von>` - Nhan khuyen nghi dau tu\n"
-        response += "- `!screener` - Tim co phieu tot\n"
-        response += "- `!analysis <ticker>` - Phan tich cu the\n"
-
-        return response
-
-    async def handle_general_query(self, query: str) -> str:
-        """Handle general queries"""
-        return (
-            "Toi chua hieu ro yeu cau cua ban. "
-            "Ban co the:\n"
-            "- Hoi ve gia: 'gia VCB'\n"
-            "- Phan tich: 'phan tich HPG'\n"
-            "- Tim kiem: 'tim co phieu tot'\n"
-            "- Tu van: 'nen dau tu gi'\n\n"
-            "Hoac dung `!help` de xem day du cac lenh."
-        )
-
-    def extract_ticker(self, text: str) -> Optional[str]:
-        """Extract stock ticker from text"""
-        import re
-
-        # Common Vietnamese stock patterns: 3-4 uppercase letters
-        patterns = [
-            r'\b([A-Z]{3})\b',  # 3 letters like VCB, HPG
-            r'\b([A-Z]{4})\b',  # 4 letters like VNINDEX
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, text.upper())
-            if match:
-                return match.group(1)
-
-        return None
-
-    async def send_long_message(self, target, content: str, max_length: int = 2000):
-        """Send long message, auto-split if needed"""
-        if len(content) <= max_length:
-            await target.send(content)
-        else:
-            chunks = [content[i:i+max_length] for i in range(0, len(content), max_length)]
-            for chunk in chunks:
-                await target.send(chunk)
-                await asyncio.sleep(0.5)
-
     async def close(self):
         """Cleanup on shutdown"""
         logger.info("Shutting down bot...")
-        self.db.close()
+        if self.orchestrator:
+            await self.orchestrator.cleanup()
         await super().close()
 
 
@@ -428,7 +319,7 @@ class RefreshButton(Button):
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_message(
-            "Dang cap nhat du lieu...",
+            "Đang cập nhật dữ liệu...",
             ephemeral=True
         )
 
@@ -445,7 +336,7 @@ class DetailsButton(Button):
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_message(
-            "Dung `!analysis <ticker>` de xem phan tich chi tiet.",
+            "Dùng `!analysis <ticker>` để xem phân tích chi tiết.",
             ephemeral=True
         )
 
@@ -462,7 +353,7 @@ class HelpButton(Button):
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_message(
-            "Dung `!help` de xem day du cac lenh!",
+            "Dùng `!help` để xem đầy đủ các lệnh!",
             ephemeral=True
         )
 
@@ -479,8 +370,8 @@ bot = HybridStockBot()
 async def help_command(ctx):
     """Show help message"""
     embed = discord.Embed(
-        title="🤖 Hybrid Stock Bot - Hướng dẫn",
-        description="Bot phân tích chứng khoán với AI thông minh",
+        title="🤖 Multi-Agent Stock Bot - Hướng dẫn",
+        description="Bot phân tích chứng khoán với 6 AI Specialists",
         color=discord.Color.blue()
     )
 
@@ -489,7 +380,7 @@ async def help_command(ctx):
         value=(
             "`!price <ticker>` - Xem giá hiện tại\n"
             "`!analysis <ticker>` - Phân tích chi tiết\n"
-            "`!chart <ticker>` - Xem biểu đồ"
+            "`!ask <câu hỏi>` - Hỏi AI bất kỳ điều gì"
         ),
         inline=False
     )
@@ -498,8 +389,8 @@ async def help_command(ctx):
         name="🔍 Tìm kiếm & Lọc",
         value=(
             "`!screener` - Tìm cổ phiếu tốt\n"
-            "`!top` - Top cổ phiếu\n"
-            "`!search <criteria>` - Tìm theo tiêu chí"
+            "`!top` - Top cổ phiếu thanh khoản\n"
+            "`!bank` - Cổ phiếu ngân hàng"
         ),
         inline=False
     )
@@ -507,9 +398,18 @@ async def help_command(ctx):
     embed.add_field(
         name="💡 Tư vấn đầu tư",
         value=(
-            "`!recommend <số vốn>` - Nhận khuyến nghị\n"
-            "`!portfolio` - Gợi ý danh mục\n"
-            "`!compare <ticker1> <ticker2>` - So sánh"
+            "`!invest <số vốn>` - Nhận khuyến nghị đầu tư\n"
+            "`!compare <ticker1> <ticker2>` - So sánh cổ phiếu\n"
+            "`!dca <ticker> <số tiền/tháng>` - Kế hoạch DCA"
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="🔮 Dự đoán",
+        value=(
+            "`!predict <ticker>` - Dự đoán giá 3 ngày\n"
+            "`!predict48 <ticker>` - Dự đoán giá 48 ngày"
         ),
         inline=False
     )
@@ -524,120 +424,146 @@ async def help_command(ctx):
     )
 
     embed.add_field(
-        name="📈 Theo dõi",
-        value=(
-            "`!alert <ticker> <price>` - Tạo cảnh báo\n"
-            "`!watchlist` - Danh sách theo dõi\n"
-            "`!subscribe <ticker>` - Đăng ký cập nhật"
-        ),
-        inline=False
-    )
-
-    embed.add_field(
         name="⚙️ Hệ thống",
         value=(
             "`!stats` - Thống kê bot\n"
-            "`!about` - Thông tin bot\n"
             "`!ping` - Kiểm tra độ trễ"
         ),
         inline=False
     )
 
-    embed.set_footer(text="Sử dụng !<lệnh> help để xem chi tiết từng lệnh")
+    embed.add_field(
+        name="🤖 6 AI Specialists",
+        value=(
+            "**AnalysisSpecialist** - Phân tích cổ phiếu\n"
+            "**ScreenerSpecialist** - Lọc & sàng lọc\n"
+            "**InvestmentPlanner** - Tư vấn đầu tư\n"
+            "**DiscoverySpecialist** - Khám phá cổ phiếu tiềm năng\n"
+            "**AlertManager** - Quản lý cảnh báo\n"
+            "**SubscriptionManager** - Theo dõi danh mục"
+        ),
+        inline=False
+    )
+
+    embed.set_footer(text="💡 Tip: Bạn có thể hỏi bằng tiếng Việt tự nhiên! Bot sẽ tự động chọn Specialist phù hợp.")
 
     await ctx.send(embed=embed)
+
+
+@bot.command(name="ask", aliases=["hoi"])
+async def ask_command(ctx, *, question: str):
+    """Ask AI any question about stocks"""
+    await bot.process_query(ctx, question, mode="auto")
 
 
 @bot.command(name="price", aliases=["gia"])
 async def price_command(ctx, ticker: str):
     """Get current price"""
     ticker = ticker.upper()
-
-    async with ctx.typing():
-        try:
-            price_data = bot.db.get_latest_price(ticker)
-
-            if not price_data:
-                await ctx.send(f"Không tìm thấy {ticker}")
-                return
-
-            # Create embed
-            embed = discord.Embed(
-                title=f"💰 {ticker} - Giá hiện tại",
-                color=discord.Color.green() if price_data.get('change_percent', 0) >= 0 else discord.Color.red()
-            )
-
-            embed.add_field(
-                name="Giá đóng cửa",
-                value=f"**{price_data['close']:,.0f}** VND",
-                inline=True
-            )
-
-            if price_data.get('volume'):
-                embed.add_field(
-                    name="Khối lượng",
-                    value=f"{price_data['volume']:,.0f}",
-                    inline=True
-                )
-
-            if price_data.get('change_percent'):
-                change = price_data['change_percent']
-                emoji = "📈" if change > 0 else "📉"
-                embed.add_field(
-                    name="Thay đổi",
-                    value=f"{emoji} {change:+.2f}%",
-                    inline=True
-                )
-
-            if price_data.get('rsi'):
-                embed.add_field(
-                    name="RSI",
-                    value=f"{price_data['rsi']:.1f}",
-                    inline=True
-                )
-
-            if price_data.get('ma20'):
-                embed.add_field(
-                    name="MA20",
-                    value=f"{price_data['ma20']:,.0f} VND",
-                    inline=True
-                )
-
-            embed.set_footer(text=f"Cập nhật: {price_data.get('date', 'N/A')}")
-
-            await ctx.send(embed=embed)
-
-        except Exception as e:
-            logger.error(f"Error in price command: {e}")
-            await ctx.send(f"Lỗi: {str(e)}")
+    query = f"Cho tôi giá cổ phiếu {ticker} hôm nay"
+    await bot.process_query(ctx, query, mode="auto")
 
 
 @bot.command(name="analysis", aliases=["phan-tich", "analyze"])
 async def analysis_command(ctx, ticker: str):
     """Analyze stock in detail"""
     ticker = ticker.upper()
-
-    async with ctx.typing():
-        response = await bot.handle_analysis_query(f"phân tích {ticker}")
-        await ctx.send(response)
+    query = f"Phân tích kỹ thuật và cơ bản cổ phiếu {ticker}"
+    await bot.process_query(ctx, query, mode="auto")
 
 
 @bot.command(name="screener", aliases=["tim", "find"])
 async def screener_command(ctx, *, criteria: str = ""):
     """Find stocks by criteria"""
-    async with ctx.typing():
-        query = f"tìm cổ phiếu {criteria}" if criteria else "tìm cổ phiếu tốt"
-        response = await bot.handle_screener_query(query)
-        await ctx.send(response)
+    if criteria:
+        query = f"Tìm cổ phiếu {criteria}"
+    else:
+        query = "Top 10 cổ phiếu có thanh khoản cao nhất"
+    await bot.process_query(ctx, query, mode="auto")
 
 
-@bot.command(name="recommend", aliases=["tu-van"])
-async def recommend_command(ctx, amount: Optional[int] = 100000000):
+@bot.command(name="top")
+async def top_command(ctx, count: int = 10):
+    """Get top stocks by liquidity"""
+    query = f"Top {count} cổ phiếu có thanh khoản cao nhất"
+    await bot.process_query(ctx, query, mode="auto")
+
+
+@bot.command(name="bank", aliases=["ngan-hang"])
+async def bank_command(ctx):
+    """Get banking stocks analysis"""
+    query = "Phân tích các cổ phiếu ngành ngân hàng VCB, TCB, MBB, ACB, BID"
+    await bot.process_query(ctx, query, mode="auto")
+
+
+@bot.command(name="invest", aliases=["dau-tu", "recommend"])
+async def invest_command(ctx, amount: str = "500000000"):
     """Get investment recommendations"""
-    async with ctx.typing():
-        query = f"với {amount/1000000:.0f} triệu thì nên đầu tư chứng khoán nào"
-        response = await bot.handle_investment_query(query)
-        await ctx.send(response)
+    # Parse amount (support "500tr", "1ty", etc.)
+    try:
+        amount_str = amount.lower().replace(",", "").replace(".", "")
+        if "tr" in amount_str or "trieu" in amount_str:
+            amount_num = float(amount_str.replace("tr", "").replace("trieu", "").replace("triệu", "")) * 1_000_000
+        elif "ty" in amount_str or "tỷ" in amount_str:
+            amount_num = float(amount_str.replace("ty", "").replace("tỷ", "")) * 1_000_000_000
+        else:
+            amount_num = float(amount_str)
+
+        # Format for display
+        if amount_num >= 1_000_000_000:
+            display = f"{amount_num/1_000_000_000:.1f} tỷ"
+        else:
+            display = f"{amount_num/1_000_000:.0f} triệu"
+
+        query = f"Tôi có {display} muốn đầu tư cổ phiếu, tư vấn cho tôi"
+
+    except:
+        query = f"Tôi có 500 triệu muốn đầu tư cổ phiếu, tư vấn cho tôi"
+
+    await bot.process_query(ctx, query, mode="auto")
+
+
+@bot.command(name="compare", aliases=["so-sanh"])
+async def compare_command(ctx, ticker1: str, ticker2: str):
+    """Compare two stocks"""
+    ticker1 = ticker1.upper()
+    ticker2 = ticker2.upper()
+    query = f"So sánh cổ phiếu {ticker1} và {ticker2}, nên mua cái nào?"
+    await bot.process_query(ctx, query, mode="auto")
+
+
+@bot.command(name="dca")
+async def dca_command(ctx, ticker: str, monthly: str = "10000000"):
+    """Generate DCA plan"""
+    ticker = ticker.upper()
+    try:
+        monthly_str = monthly.lower().replace(",", "").replace(".", "")
+        if "tr" in monthly_str or "trieu" in monthly_str:
+            monthly_num = float(monthly_str.replace("tr", "").replace("trieu", "").replace("triệu", "")) * 1_000_000
+        else:
+            monthly_num = float(monthly_str)
+        display = f"{monthly_num/1_000_000:.0f} triệu"
+    except:
+        display = "10 triệu"
+
+    query = f"Tạo kế hoạch DCA cho cổ phiếu {ticker} với {display}/tháng trong 12 tháng"
+    await bot.process_query(ctx, query, mode="auto")
+
+
+@bot.command(name="predict", aliases=["du-doan"])
+async def predict_command(ctx, ticker: str):
+    """Predict stock price for 3 days"""
+    ticker = ticker.upper()
+    query = f"Dự đoán giá cổ phiếu {ticker} trong 3 ngày tới"
+    await bot.process_query(ctx, query, mode="auto")
+
+
+@bot.command(name="predict48")
+async def predict48_command(ctx, ticker: str):
+    """Predict stock price for 48 days"""
+    ticker = ticker.upper()
+    query = f"Dự đoán giá cổ phiếu {ticker} trong 48 ngày tới"
+    await bot.process_query(ctx, query, mode="auto")
 
 
 @bot.command(name="stats", aliases=["thong-ke"])
@@ -669,14 +595,6 @@ async def stats_command(ctx):
         inline=True
     )
 
-    # Database stats
-    db_stats = bot.db.get_stats()
-    embed.add_field(
-        name="Database",
-        value=f"Calls: {db_stats['total_calls']}\nCache hits: {db_stats['cache_hits']}\nHit rate: {db_stats['cache_hit_rate']}",
-        inline=False
-    )
-
     await ctx.send(embed=embed)
 
 
@@ -685,44 +603,6 @@ async def ping_command(ctx):
     """Check bot latency"""
     latency = round(bot.latency * 1000)
     await ctx.send(f"🏓 Pong! Độ trễ: {latency}ms")
-
-
-@bot.command(name="about", aliases=["thong-tin"])
-async def about_command(ctx):
-    """About the bot"""
-    embed = discord.Embed(
-        title="🤖 Hybrid Stock Bot",
-        description="Bot phân tích chứng khoán Việt Nam với hệ thống AI Hybrid thông minh",
-        color=discord.Color.gold()
-    )
-
-    embed.add_field(
-        name="Tính năng",
-        value=(
-            "✅ AI-powered routing (tự động chọn chế độ tối ưu)\n"
-            "✅ Specialized agents (6 agents chuyên môn)\n"
-            "✅ Real-time data từ PostgreSQL\n"
-            "✅ Client-side caching (tăng tốc 10x)\n"
-            "✅ Conversation memory (nhớ ngữ cảnh)\n"
-            "✅ Interactive UI với buttons"
-        ),
-        inline=False
-    )
-
-    embed.add_field(
-        name="Technology Stack",
-        value=(
-            "🔹 Python + Discord.py\n"
-            "🔹 Google Gemini AI\n"
-            "🔹 PostgreSQL Database\n"
-            "🔹 Hybrid Multi-Agent System"
-        ),
-        inline=False
-    )
-
-    embed.set_footer(text="Made with ❤️ by DATN Team | 2026")
-
-    await ctx.send(embed=embed)
 
 
 @bot.event
@@ -751,7 +631,7 @@ def main():
         return
 
     try:
-        logger.info("Starting Hybrid Stock Bot...")
+        logger.info("Starting Multi-Agent Stock Bot...")
         bot.run(token)
     except discord.LoginFailure:
         logger.error("Invalid Discord token!")
@@ -759,9 +639,6 @@ def main():
         logger.info("Bot stopped by user")
     except Exception as e:
         logger.error(f"Error running bot: {e}", exc_info=True)
-    finally:
-        # Cleanup
-        asyncio.run(bot.close())
 
 
 if __name__ == "__main__":

@@ -43,6 +43,10 @@ class MCPToolWrapper:
         self.tool_name = tool_name
         self.description = description or f"MCP tool: {tool_name}"
 
+        # Add __name__ attribute for OpenAI adapter compatibility
+        self.__name__ = tool_name
+        self.__doc__ = description or f"MCP tool: {tool_name}"
+
         # Stats
         self.call_count = 0
         self.error_count = 0
@@ -83,7 +87,6 @@ class MCPToolWrapper:
 
         except Exception as e:
             self.error_count += 1
-            print(f"❌ MCPToolWrapper error for {self.tool_name}: {e}")
             return {
                 "status": "error",
                 "error": str(e),
@@ -187,10 +190,6 @@ def create_mcp_tools_for_agent(mcp_client, tool_names: list = None) -> list:
                 description=ALL_TOOLS[tool_name]
             )
             wrapped_tools.append(wrapper)
-        else:
-            print(f"⚠️ Warning: Tool '{tool_name}' not found in available tools")
-
-    print(f"✅ Created {len(wrapped_tools)} wrapped MCP tools for agent")
 
     return wrapped_tools
 

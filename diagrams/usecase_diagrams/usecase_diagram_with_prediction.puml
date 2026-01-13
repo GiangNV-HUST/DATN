@@ -1,126 +1,53 @@
 @startuml usecase_diagram_with_prediction
 !theme plain
-skinparam backgroundColor #FEFEFE
-skinparam actorBackgroundColor #E3F2FD
-skinparam usecaseBackgroundColor #FFF9C4
-skinparam componentBackgroundColor #E1F5FE
-skinparam packageBackgroundColor #E8F5E9
+skinparam backgroundColor #FFFFFF
 skinparam shadowing false
+skinparam defaultFontName Arial
 
 left to right direction
 
-actor "User\n(Người dùng)" as User #LightBlue
+actor "User" as User
 
-rectangle "Hệ thống giao dịch chứng khoán\n(Stock Trading System)" #LightYellow {
+usecase "UC2: Đăng ký\ncảnh báo" as UC2
+usecase "UC3: Đăng ký\ntheo dõi cổ phiếu" as UC3
+usecase "UC4: Lọc\ncổ phiếu" as UC4
+usecase "UC5: Truy vấn\ndữ liệu cơ bản" as UC5
+usecase "UC6: Phân tích\nkỹ thuật & tài chính" as UC6
+usecase "UC7: Xem biểu đồ\ngiá & indicators" as UC7
+usecase "UC8: Tư vấn\nđầu tư" as UC8
+usecase "UC9: Tìm kiếm &\nkhám phá cổ phiếu" as UC9
+usecase "UC10: Dự đoán\ngiá cổ phiếu" as UC10
+usecase "UC1: Xác thực\ndanh tính" as UC1
 
-  ' Main Use Cases
-  usecase "UC1: Xác thực\ndanh tính" as UC1 #LightGreen
-  usecase "UC2: Đăng ký\ncảnh báo" as UC2 #LightGreen
-  usecase "UC3: Đăng ký\ntheo dõi cổ phiếu" as UC3 #LightGreen
-  usecase "UC4: Lọc\ncổ phiếu" as UC4 #LightGreen
-  usecase "UC5: Truy vấn\ndữ liệu cơ bản" as UC5 #LightGreen
-  usecase "UC6: Phân tích\nkỹ thuật & tài chính" as UC6 #LightGreen
-  usecase "UC7: Xem biểu đồ\ngiá & indicators" as UC7 #LightGreen
-  usecase "UC8: Tư vấn\nđầu tư" as UC8 #LightGreen
-  usecase "UC9: Tìm kiếm &\nkhám phá cổ phiếu" as UC9 #LightGreen
-  usecase "UC10: Dự đoán\ngiá cổ phiếu" as UC10 #FFB6C1
+User --> UC1
+User --> UC2
+User --> UC3
+User --> UC4
+User --> UC5
+User --> UC6
+User --> UC7
+User --> UC8
+User --> UC9
+User --> UC10
 
-  ' User connections
-  User --> UC1
-  User --> UC2
-  User --> UC3
-  User --> UC4
-  User --> UC5
-  User --> UC6
-  User --> UC7
-  User --> UC8
-  User --> UC9
-  User --> UC10
+UC2 ..> UC1 : <<include>>
+UC3 ..> UC1 : <<include>>
+UC4 ..> UC1 : <<include>>
+UC5 ..> UC1 : <<include>>
+UC6 ..> UC1 : <<include>>
+UC7 ..> UC1 : <<include>>
+UC8 ..> UC1 : <<include>>
+UC9 ..> UC1 : <<include>>
+UC10 ..> UC1 : <<include>>
 
-  ' MCP Server component
-  component "MCP Server\n(28 MCP Tools)" as MCP #LightBlue {
-    note right of MCP
-      **Tool Categories:**
-      • Stock Data Tools (4)
-      • Alert Management (3)
-      • Subscription Tools (3)
-      • AI Tools (3)
-      • Financial Data (3)
-      • Investment Planning (5)
-      • Stock Discovery (4)
-      • **Prediction Tools (3)** ← NEW
-    end note
-  }
-
-  ' Prediction System Component
-  component "Ensemble Prediction\nSystem" as PredictionSys #LightCoral {
-    note right of PredictionSys
-      **5 Base Models:**
-      • PatchTST (Transformer)
-      • LSTM + Attention
-      • LightGBM (Boosting)
-      • Prophet (Time Series)
-      • XGBoost (Boosting)
-
-      **Meta-Model:**
-      • MLPRegressor (Stacking)
-
-      **Scenario Handlers (5):**
-      • News Shock
-      • Market Crash
-      • Foreign Flow
-      • VN30 Adjustment
-      • Margin Call
-    end note
-  }
-
-  ' Use Cases use MCP
-  UC1 .down.> MCP : <<uses>>
-  UC2 .down.> MCP : <<uses>>
-  UC3 .down.> MCP : <<uses>>
-  UC4 .down.> MCP : <<uses>>
-  UC5 .down.> MCP : <<uses>>
-  UC6 .down.> MCP : <<uses>>
-  UC7 .down.> MCP : <<uses>>
-  UC8 .down.> MCP : <<uses>>
-  UC9 .down.> MCP : <<uses>>
-  UC10 .down.> MCP : <<uses>>
-
-  ' UC10 uses Prediction System
-  UC10 .down.> PredictionSys : <<uses>>
-  MCP .down.> PredictionSys : <<calls>>
-}
-
-' External Services
-package "Dịch vụ bên ngoài" #Lavender {
-  database "PostgreSQL\n+ TimescaleDB" as DB #LightCyan
-  cloud "TCBS API\n(tcbs.com)" as TCBS #LightPink
-  cloud "Gemini AI\n(Google)" as AI1 #LightSalmon
-  cloud "Claude AI\n(Anthropic)" as AI2 #LightSalmon
-  cloud "GPT-4o\n(OpenAI)" as AI3 #LightSalmon
-}
-
-' MCP connects to external services
-MCP -down-> DB : query data
-MCP -down-> TCBS : API calls
-MCP -down-> AI1 : Gemini requests
-MCP -down-> AI2 : Claude requests
-MCP -down-> AI3 : GPT-4o requests
-
-' Prediction System connects to DB
-PredictionSys -down-> DB : load models\n& historical data
-
-' Legend
-legend right
-  |= Symbol |= Ý nghĩa |
-  | <actor> Actor | Người dùng hệ thống |
-  | <usecase> Use Case | Chức năng của hệ thống |
-  | <component> Component | MCP Server (28 tools) |
-  | <database> Database | Cơ sở dữ liệu |
-  | <cloud> Cloud | Dịch vụ đám mây |
-  | → | Thực hiện / Kết nối |
-  | ..> | Sử dụng (dependency) |
-  | **NEW** | UC10 & Prediction System |
-endlegend
+UC2 -[hidden]right-> UC1
+UC3 -[hidden]right-> UC1
+UC4 -[hidden]right-> UC1
+UC5 -[hidden]right-> UC1
+UC6 -[hidden]right-> UC1
+UC7 -[hidden]right-> UC1
+UC8 -[hidden]right-> UC1
+UC9 -[hidden]right-> UC1
+UC10 -[hidden]right-> UC1
 
 @enduml
