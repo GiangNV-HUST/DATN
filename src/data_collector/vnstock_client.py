@@ -1,5 +1,15 @@
 import sys
+import logging
 from unittest.mock import MagicMock
+
+# Suppress vnstock logging BEFORE import to prevent I/O errors in thread pools
+for _vn_logger_name in ['vnstock', 'vnstock.explorer', 'vnstock.common', 'vnstock.core',
+                         'vnai', 'vnstock.explorer.vci', 'vnstock.explorer.tcbs', 'vnstock.quote']:
+    _vn_logger = logging.getLogger(_vn_logger_name)
+    _vn_logger.setLevel(logging.CRITICAL)
+    _vn_logger.propagate = False
+    if not _vn_logger.handlers:
+        _vn_logger.addHandler(logging.NullHandler())
 
 # Workaround: Mock wordcloud module trước khi import vnstock
 # Vì vnstock_ezchart cần wordcloud nhưng chúng ta không dùng chart
@@ -9,7 +19,6 @@ from vnstock import Vnstock
 import pandas as pd
 from datetime import datetime, timedelta
 import pytz
-import logging
 
 logger = logging.getLogger(__name__)
 

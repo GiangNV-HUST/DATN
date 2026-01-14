@@ -24,7 +24,7 @@ class TerminationConfig:
     max_tool_calls: int = 20
 
     # Time limits
-    timeout: float = 60.0  # seconds
+    timeout: float = 120.0  # seconds (increased for API calls)
 
     # Error handling
     max_retries: int = 3
@@ -69,41 +69,52 @@ class TerminationConfig:
 
 
 # Default agent-specific configs
+# Timeouts increased to handle OpenAI API latency and database queries
 DEFAULT_AGENT_LIMITS = {
     "AnalysisSpecialist": {
-        "max_tool_calls": 5,
-        "timeout": 10.0,
+        "max_tool_calls": 10,
+        "timeout": 60.0,  # Increased for API + multiple tool calls
         "max_cost": 0.50
     },
     "ScreenerSpecialist": {
-        "max_tool_calls": 3,
-        "timeout": 5.0,
-        "max_cost": 0.10
+        "max_tool_calls": 5,
+        "timeout": 45.0,  # Increased for OpenAI parsing + database query
+        "max_cost": 0.20
     },
     "InvestmentPlanner": {
-        "max_tool_calls": 8,
-        "timeout": 15.0,
-        "max_cost": 0.30
+        "max_tool_calls": 15,
+        "timeout": 90.0,  # Complex planning needs more time
+        "max_cost": 0.50
     },
     "DiscoverySpecialist": {
         "max_tool_calls": 10,
-        "timeout": 12.0,
+        "timeout": 60.0,
         "max_cost": 0.40
     },
     "AlertManager": {
-        "max_tool_calls": 3,
-        "timeout": 3.0,
-        "max_cost": 0.05
+        "max_tool_calls": 5,
+        "timeout": 30.0,
+        "max_cost": 0.10
     },
     "SubscriptionManager": {
-        "max_tool_calls": 3,
-        "timeout": 3.0,
-        "max_cost": 0.05
+        "max_tool_calls": 5,
+        "timeout": 30.0,
+        "max_cost": 0.10
+    },
+    "MarketContextSpecialist": {
+        "max_tool_calls": 10,
+        "timeout": 60.0,  # Market overview may need multiple API calls
+        "max_cost": 0.40
+    },
+    "ComparisonSpecialist": {
+        "max_tool_calls": 15,
+        "timeout": 90.0,  # Comparison needs data from multiple stocks
+        "max_cost": 0.50
     },
     "DirectExecutor": {
-        "max_tool_calls": 1,
-        "timeout": 2.0,
-        "max_cost": 0.05
+        "max_tool_calls": 3,
+        "timeout": 15.0,
+        "max_cost": 0.10
     }
 }
 

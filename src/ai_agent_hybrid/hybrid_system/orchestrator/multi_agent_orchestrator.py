@@ -50,9 +50,17 @@ from ..core.state_management import state_manager
 from ..core.termination import ExecutionGuard
 from ..core.tool_allocation import resource_monitor
 from ..core.evaluation import critic_agent, arbitration_agent
+from ..core.error_recovery import (
+    retry_async, RetryConfig, FallbackChain,
+    error_recovery_manager, RETRY_CONFIGS
+)
+from ..core.task_context import (
+    TaskContext, WorkflowContext, TaskContextBuilder,
+    DataTypes, create_task_context
+)
 
 # Import AI-Powered Specialist Router for intelligent routing
-from .specialist_router import SpecialistRouter
+from .specialist_router import SpecialistRouter, MultiAgentRoutingDecision, AgentTask
 
 
 class MultiAgentOrchestrator:
@@ -292,12 +300,29 @@ class MultiAgentOrchestrator:
             "kế hoạch", "ke hoach", "phân bổ", "phan bo", "danh mục", "danh muc",
             "portfolio", "dca", "vốn", "von", "triệu", "trieu", "tỷ", "ty"
         ]):
-            return {
-                "type": "simple",
-                "specialist": "InvestmentPlanner",
-                "method": "create_investment_plan",
-                "params": self._parse_investment_params(user_query, user_id)
-            }
+            # Check if this is a specific DCA query for a single stock
+            symbols = self._extract_symbols(user_query)
+            is_dca_query = "dca" in query_lower or any(kw in query_lower for kw in [
+                "mỗi tháng", "moi thang", "hàng tháng", "hang thang",
+                "định kỳ", "dinh ky", "/tháng", "/thang", "tích lũy", "tich luy"
+            ])
+
+            if is_dca_query and len(symbols) == 1:
+                # Single stock DCA plan
+                return {
+                    "type": "simple",
+                    "specialist": "InvestmentPlanner",
+                    "method": "create_dca_plan",
+                    "params": self._parse_dca_params(user_query, symbols[0])
+                }
+            else:
+                # General investment plan
+                return {
+                    "type": "simple",
+                    "specialist": "InvestmentPlanner",
+                    "method": "create_investment_plan",
+                    "params": self._parse_investment_params(user_query, user_id)
+                }
 
         # SUBSCRIPTION - Subscription management / Watchlist
         if any(kw in query_lower for kw in [
@@ -347,22 +372,102 @@ class MultiAgentOrchestrator:
                   "MBB", "BID", "CTG", "STB", "HDB", "SSI", "VND", "HCM", "GAS", "PNJ",
                   "MWG", "REE", "DPM", "PVD", "PLX", "PVS", "GVR", "POW", "VJC", "HVN"]
 
+        # Vietnamese words to exclude (commonly misidentified as symbols)
+        exclude = {"KHI", "NEN", "CAI", "NAO", "XEM", "MUA", "BAN", "GIA", "HON", "TOT",
+                   "HAY", "ROI", "SAU", "CHO", "VAN", "THE", "NAY", "TAO", "TEN", "MOT",
+                   "HAI", "BAO", "VON", "LOC", "TOP", "HOT", "TAT", "MAT", "DAU", "TRI",
+                   "DCA", "VOI", "MOI", "LAP", "KHO", "TUY", "TAN", "DEN", "SAN", "CAN",
+                   "CHI", "GOI", "THI", "TUC", "VAY", "COT", "CAO", "KEO", "DUA", "NUA"}
+
         symbols = []
         for match in matches:
+            if match in exclude:
+                continue
             if match in common or len(match) == 3:
                 symbols.append(match)
 
         return list(set(symbols)) if symbols else []
 
+    def _extract_capital(self, query: str) -> float:
+        """Extract capital amount from query"""
+        import re
+
+        capital = 100_000_000  # Default 100M VND
+
+        # Try to find numbers with units (Vietnamese)
+        # Pattern: 100 triệu, 1.5 tỷ, 500tr, etc.
+        patterns = [
+            (r'(\d+(?:[.,]\d+)?)\s*(tỷ|ty)', 1_000_000_000),
+            (r'(\d+(?:[.,]\d+)?)\s*(triệu|trieu|tr)', 1_000_000),
+            (r'(\d+(?:[.,]\d+)?)\s*m(?:illion)?', 1_000_000),  # English million
+            (r'(\d+(?:[.,]\d+)?)\s*b(?:illion)?', 1_000_000_000),  # English billion
+        ]
+
+        query_lower = query.lower()
+        for pattern, multiplier in patterns:
+            match = re.search(pattern, query_lower)
+            if match:
+                amount_str = match.group(1).replace(",", ".")
+                try:
+                    amount = float(amount_str)
+                    capital = int(amount * multiplier)
+                    break
+                except ValueError:
+                    continue
+
+        return capital
+
     def _parse_alert_params(self, query: str, user_id: str) -> Dict:
-        """Parse alert creation parameters"""
+        """Parse alert creation parameters from query"""
+        import re
+
         symbols = self._extract_symbols(query)
+        query_lower = query.lower()
+
+        # Determine condition type (API expects "above"/"below")
+        condition = "above"  # default
+        if any(kw in query_lower for kw in ["dưới", "duoi", "thấp hơn", "thap hon", "giảm", "giam", "<"]):
+            condition = "below"
+        elif any(kw in query_lower for kw in ["trên", "tren", "vượt", "vuot", "cao hơn", "cao hon", "tăng", "tang", ">"]):
+            condition = "above"
+
+        # Extract target value (price)
+        # Patterns: "80000", "80,000", "80.000", "80k", "80 nghìn"
+        target_value = None
+        patterns = [
+            r'(\d{1,3}(?:[.,]\d{3})+)',  # 80,000 or 80.000
+            r'(\d+)\s*k\b',  # 80k
+            r'(\d+)\s*(?:nghìn|nghin)',  # 80 nghìn
+            r'(?:>|<|vượt|vuot|dưới|duoi|trên|tren)\s*(\d+)',  # > 80000
+            r'(\d{4,6})\b',  # 80000 (4-6 digits)
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, query_lower)
+            if match:
+                value_str = match.group(1).replace(",", "").replace(".", "")
+                try:
+                    target_value = float(value_str)
+                    # If pattern was "k" or "nghìn", multiply by 1000
+                    if "k" in pattern or "nghìn" in pattern or "nghin" in pattern:
+                        target_value *= 1000
+                    break
+                except ValueError:
+                    continue
+
+        # Determine alert type
+        alert_type = "price"  # default
+        if any(kw in query_lower for kw in ["rsi", "macd", "ma", "indicator", "chỉ báo", "chi bao"]):
+            alert_type = "indicator"
+        elif any(kw in query_lower for kw in ["volume", "khối lượng", "khoi luong"]):
+            alert_type = "volume"
+
         return {
             "user_id": user_id,
             "symbol": symbols[0] if symbols else "VCB",
-            "alert_type": "price",
-            "condition": ">",
-            "target_value": None
+            "alert_type": alert_type,
+            "condition": condition,
+            "target_value": target_value
         }
 
     def _parse_investment_params(self, query: str, user_id: str) -> Dict:
@@ -402,6 +507,59 @@ class MultiAgentOrchestrator:
             "time_horizon": horizon
         }
 
+    def _parse_dca_params(self, query: str, symbol: str) -> Dict:
+        """Parse DCA plan parameters from query"""
+        import re
+
+        monthly_investment = 5_000_000  # Default 5M/month
+        duration_months = 12  # Default 12 months
+
+        query_lower = query.lower()
+
+        # Extract monthly investment amount
+        # Patterns: "5 triệu/tháng", "5tr mỗi tháng", "5 triệu moi thang"
+        monthly_patterns = [
+            r'(\d+(?:[.,]\d+)?)\s*(triệu|trieu|tr)(?:\s*/?\s*(?:tháng|thang|month))?',
+            r'(\d+(?:[.,]\d+)?)\s*m(?:illion)?(?:\s*/?\s*(?:tháng|thang|month))?',
+        ]
+
+        for pattern in monthly_patterns:
+            match = re.search(pattern, query_lower)
+            if match:
+                amount = float(match.group(1).replace(",", "."))
+                if "m" in pattern:
+                    monthly_investment = int(amount * 1_000_000)
+                else:
+                    monthly_investment = int(amount * 1_000_000)
+                break
+
+        # Extract duration (months)
+        # Patterns: "12 tháng", "1 năm", "6 months"
+        duration_patterns = [
+            (r'(\d+)\s*(?:tháng|thang|month)', 1),
+            (r'(\d+)\s*(?:năm|nam|year)', 12),
+        ]
+
+        for pattern, multiplier in duration_patterns:
+            match = re.search(pattern, query_lower)
+            if match:
+                duration_months = int(match.group(1)) * multiplier
+                break
+
+        # Determine price trend
+        price_trend = "neutral"
+        if any(kw in query_lower for kw in ["tăng", "tang", "bullish", "lạc quan", "lac quan"]):
+            price_trend = "bullish"
+        elif any(kw in query_lower for kw in ["giảm", "giam", "bearish", "bi quan", "thận trọng", "than trong"]):
+            price_trend = "bearish"
+
+        return {
+            "symbol": symbol.upper(),
+            "monthly_investment": monthly_investment,
+            "duration_months": duration_months,
+            "price_trend": price_trend
+        }
+
     def _parse_subscription_params(self, query: str, user_id: str) -> Dict:
         """Parse subscription parameters"""
         sub_type = "premium"
@@ -417,12 +575,434 @@ class MultiAgentOrchestrator:
             "auto_renew": False
         }
 
+    async def _execute_single_task(
+        self,
+        task: AgentTask,
+        session_id: str,
+        user_id: str,
+        shared_state,
+        previous_results: Dict[str, str] = None
+    ) -> AsyncIterator[Dict]:
+        """
+        Execute a single agent task
+
+        Args:
+            task: The task to execute
+            session_id: Session ID
+            user_id: User ID
+            shared_state: Shared state for storing results
+            previous_results: Results from previous tasks (for sequential execution)
+
+        Yields:
+            Dict with execution events
+        """
+        specialist_name = task.specialist
+        method_name = task.method
+        params = task.params.copy()
+
+        # Ensure user_id is in params
+        if "user_id" not in params:
+            params["user_id"] = user_id
+
+        # Extract symbols from user_query if not provided
+        if "symbols" not in params and "user_query" in params:
+            extracted_symbols = self._extract_symbols(params["user_query"])
+            if extracted_symbols:
+                params["symbols"] = extracted_symbols
+
+        # Extract capital from user_query for InvestmentPlanner
+        if specialist_name == "InvestmentPlanner" and "capital" not in params:
+            if "user_query" in params:
+                extracted_capital = self._extract_capital(params["user_query"])
+                params["capital"] = extracted_capital
+
+        # For sequential tasks, inject previous results into context
+        if previous_results and task.depends_on:
+            # Handle both single and list depends_on
+            depends_list = task.depends_on if isinstance(task.depends_on, list) else [task.depends_on]
+            prev_results_text = []
+            for dep_id in depends_list:
+                prev_result = previous_results.get(dep_id, "")
+                if prev_result:
+                    prev_results_text.append(prev_result[:1500])
+
+            if prev_results_text:
+                combined_prev = "\n\n---\n\n".join(prev_results_text)
+                # Add previous result to params for context
+                params["previous_context"] = combined_prev
+                # Also update user_query to include context
+                if "user_query" in params:
+                    params["user_query"] = f"{params['user_query']}\n\n[Ket qua tu buoc truoc]:\n{combined_prev}"
+
+        # Get specialist
+        specialist = self.specialists.get(specialist_name)
+        if not specialist:
+            yield {
+                "type": "error",
+                "data": {"error": f"Specialist {specialist_name} not found"}
+            }
+            return
+
+        # Method mapping for backwards compatibility
+        method_mapping = {
+            ("ScreenerSpecialist", "get_top"): "screen",
+            ("AnalysisSpecialist", "get_price"): "analyze",
+            ("AnalysisSpecialist", "predict"): "analyze",
+            ("AlertManager", "list_alerts"): "get_alerts",
+            ("SubscriptionManager", "list_subscriptions"): "get_subscriptions",
+        }
+
+        actual_method = method_mapping.get((specialist_name, method_name), method_name)
+
+        # Get method from specialist
+        if not hasattr(specialist, actual_method):
+            default_methods = {
+                "AnalysisSpecialist": "analyze",
+                "ScreenerSpecialist": "screen",
+                "AlertManager": "get_alerts",
+                "InvestmentPlanner": "create_investment_plan",
+                "DiscoverySpecialist": "discover",
+                "SubscriptionManager": "get_subscriptions",
+                "MarketContextSpecialist": "analyze",
+                "ComparisonSpecialist": "analyze",
+            }
+            actual_method = default_methods.get(specialist_name, method_name)
+
+        method = getattr(specialist, actual_method)
+        full_response = []
+
+        # Filter params to match method signature
+        import inspect
+        sig = inspect.signature(method)
+        valid_params = {}
+        for param_name in sig.parameters:
+            if param_name == 'self':
+                continue
+            if param_name in params:
+                valid_params[param_name] = params[param_name]
+
+        # Build task context for structured data passing
+        task_context = TaskContextBuilder() \
+            .task_id(task.task_id) \
+            .specialist(specialist_name) \
+            .query(params.get("user_query", ""), task.method) \
+            .symbols(params.get("symbols", [])) \
+            .build()
+
+        # Add previous results to task context
+        if previous_results:
+            for prev_id, prev_result in previous_results.items():
+                task_context.add_previous_result(prev_id, prev_result)
+
+        # Store task context in shared state
+        shared_state.set(f"task_context_{task.task_id}", task_context.to_dict(), agent=specialist_name)
+
+        # Execute method with error recovery
+        retry_count = 0
+        max_retries = 2
+        last_error = None
+
+        while retry_count <= max_retries:
+            try:
+                result = method(**valid_params)
+
+                # Handle async iterator
+                if hasattr(result, '__aiter__'):
+                    async for chunk in result:
+                        # Ensure chunk is string
+                        chunk_str = chunk if isinstance(chunk, str) else str(chunk)
+                        full_response.append(chunk_str)
+                        yield {
+                            "type": "chunk",
+                            "data": chunk_str,
+                            "task_id": task.task_id,
+                            "specialist": specialist_name
+                        }
+                    break  # Success, exit retry loop
+                # Handle coroutine
+                elif hasattr(result, '__await__'):
+                    response = await result
+                    # Ensure response is string
+                    response_str = response if isinstance(response, str) else str(response)
+                    full_response.append(response_str)
+                    yield {
+                        "type": "chunk",
+                        "data": response_str,
+                        "task_id": task.task_id,
+                        "specialist": specialist_name
+                    }
+                    break  # Success, exit retry loop
+                # Handle sync result
+                else:
+                    full_response.append(str(result))
+                    yield {
+                        "type": "chunk",
+                        "data": str(result),
+                        "task_id": task.task_id,
+                        "specialist": specialist_name
+                    }
+                    break  # Success, exit retry loop
+
+            except Exception as e:
+                last_error = e
+                retry_count += 1
+                error_recovery_manager.record_error(
+                    source=specialist_name,
+                    error=e,
+                    context={"task_id": task.task_id, "method": method_name}
+                )
+
+                if retry_count <= max_retries:
+                    # Wait before retry (exponential backoff)
+                    import asyncio
+                    delay = 1.0 * (2 ** (retry_count - 1))
+                    yield {
+                        "type": "status",
+                        "data": f"[Retry {retry_count}/{max_retries}] {specialist_name} gap loi, thu lai sau {delay:.1f}s..."
+                    }
+                    await asyncio.sleep(delay)
+                else:
+                    # All retries failed, yield error but continue
+                    yield {
+                        "type": "error",
+                        "data": {
+                            "task_id": task.task_id,
+                            "specialist": specialist_name,
+                            "error": str(last_error),
+                            "retries": retry_count - 1
+                        }
+                    }
+                    full_response.append(f"[Loi] {specialist_name}: {str(last_error)[:200]}")
+
+        # Record success if no error
+        if not last_error or retry_count <= max_retries:
+            error_recovery_manager.record_success(specialist_name)
+
+        # Store result in shared state - ensure all items are strings
+        result_text = "".join(str(item) for item in full_response)
+        shared_state.set(f"task_result_{task.task_id}", result_text, agent=specialist_name)
+
+        # Register data in task context for subsequent agents
+        if result_text:
+            # Determine data type based on specialist
+            data_type_map = {
+                "AnalysisSpecialist": DataTypes.PRICE_DATA,
+                "ScreenerSpecialist": DataTypes.SCREENING_RESULTS,
+                "MarketContextSpecialist": DataTypes.MARKET_INDEX,
+                "ComparisonSpecialist": DataTypes.COMPARISON_MATRIX,
+                "InvestmentPlanner": DataTypes.INVESTMENT_PLAN,
+                "DiscoverySpecialist": DataTypes.PRICE_DATA,
+            }
+            data_type = data_type_map.get(specialist_name, "result")
+            task_context.add_available_data(
+                key=f"task_result_{task.task_id}",
+                source_agent=specialist_name,
+                data_type=data_type,
+                symbols=params.get("symbols", [])
+            )
+
+        yield {
+            "type": "task_complete",
+            "data": {
+                "task_id": task.task_id,
+                "specialist": specialist_name,
+                "result": result_text
+            }
+        }
+
+    async def _execute_multi_agent_workflow(
+        self,
+        routing_decision: MultiAgentRoutingDecision,
+        user_query: str,
+        user_id: str,
+        session_id: str
+    ) -> AsyncIterator[Dict]:
+        """
+        Execute multi-agent workflow based on routing decision
+
+        Supports:
+        - Sequential execution: Agent A -> Agent B
+        - Parallel execution: Agent A & Agent B simultaneously
+        - Result aggregation
+
+        Args:
+            routing_decision: Multi-agent routing decision
+            user_query: Original user query
+            user_id: User ID
+            session_id: Session ID
+
+        Yields:
+            Dict with execution events
+        """
+        import asyncio
+
+        shared_state = state_manager.get_shared_state(session_id)
+        tasks = routing_decision.tasks
+        execution_mode = routing_decision.execution_mode
+        aggregation_strategy = routing_decision.aggregation_strategy
+
+        all_results: Dict[str, str] = {}
+        all_responses: List[str] = []
+
+        if execution_mode == "single" or (execution_mode == "sequential" and len(tasks) == 1):
+            # Single task execution
+            task = tasks[0]
+            task_response = []
+            async for event in self._execute_single_task(
+                task, session_id, user_id, shared_state, {}
+            ):
+                if event["type"] == "chunk":
+                    chunk_data = event["data"]
+                    if isinstance(chunk_data, str):
+                        task_response.append(chunk_data)
+                    else:
+                        task_response.append(str(chunk_data))
+                yield event
+
+            result_text = "".join(task_response)
+            all_results[task.task_id] = result_text
+            all_responses.append(result_text)
+            self.query_metrics["specialist_usage"][task.specialist] += 1
+
+        elif execution_mode == "sequential":
+            # Execute tasks one by one, passing results to next task
+            for i, task in enumerate(tasks):
+                yield {
+                    "type": "status",
+                    "data": f"Buoc {i+1}/{len(tasks)}: Dang su dung {task.specialist}..."
+                }
+
+                # Execute task with previous results
+                task_response = []
+                async for event in self._execute_single_task(
+                    task, session_id, user_id, shared_state, all_results
+                ):
+                    if event["type"] == "chunk":
+                        # Ensure data is string
+                        chunk_data = event["data"]
+                        if isinstance(chunk_data, str):
+                            task_response.append(chunk_data)
+                        elif isinstance(chunk_data, dict):
+                            task_response.append(str(chunk_data))
+                        else:
+                            task_response.append(str(chunk_data))
+                    yield event
+
+                # Store result for next task
+                result_text = "".join(task_response)
+                all_results[task.task_id] = result_text
+                all_responses.append(f"\n\n## {task.specialist}\n{result_text}")
+
+                # Track specialist usage
+                self.query_metrics["specialist_usage"][task.specialist] += 1
+
+        elif execution_mode == "parallel":
+            # Execute all tasks concurrently with streaming
+            yield {
+                "type": "status",
+                "data": f"Dang chay {len(tasks)} agents song song..."
+            }
+
+            # Use asyncio.Queue for streaming results as they come
+            result_queue = asyncio.Queue()
+            completed_tasks = set()
+
+            async def run_task_streaming(task):
+                """Run task and put results in queue as they arrive"""
+                responses = []
+                try:
+                    async for event in self._execute_single_task(
+                        task, session_id, user_id, shared_state, {}
+                    ):
+                        if event["type"] == "chunk":
+                            chunk_data = event["data"]
+                            chunk_str = chunk_data if isinstance(chunk_data, str) else str(chunk_data)
+                            responses.append(chunk_str)
+                            # Stream chunk immediately
+                            await result_queue.put(("chunk", task.task_id, task.specialist, chunk_str))
+
+                    # Signal task completion
+                    final_response = "".join(responses)
+                    await result_queue.put(("complete", task.task_id, task.specialist, final_response))
+                except Exception as e:
+                    await result_queue.put(("error", task.task_id, task.specialist, str(e)))
+
+            # Start all tasks
+            task_futures = [asyncio.create_task(run_task_streaming(task)) for task in tasks]
+
+            # Stream results as they arrive
+            task_responses = {task.task_id: [] for task in tasks}
+
+            while len(completed_tasks) < len(tasks):
+                try:
+                    result = await asyncio.wait_for(result_queue.get(), timeout=120.0)
+                    event_type, task_id, specialist, data = result
+
+                    if event_type == "chunk":
+                        task_responses[task_id].append(data)
+                        # Yield chunk immediately for real-time streaming
+                        yield {
+                            "type": "chunk",
+                            "data": data,
+                            "task_id": task_id,
+                            "specialist": specialist
+                        }
+
+                    elif event_type == "complete":
+                        completed_tasks.add(task_id)
+                        final_response = "".join(task_responses[task_id])
+                        all_results[task_id] = final_response
+                        all_responses.append(f"\n\n## {specialist}\n{final_response}")
+                        self.query_metrics["specialist_usage"][specialist] += 1
+
+                        yield {
+                            "type": "task_complete",
+                            "data": {
+                                "task_id": task_id,
+                                "specialist": specialist,
+                                "result": final_response
+                            }
+                        }
+
+                    elif event_type == "error":
+                        completed_tasks.add(task_id)
+                        yield {
+                            "type": "error",
+                            "data": {"error": data, "task_id": task_id, "specialist": specialist}
+                        }
+
+                except asyncio.TimeoutError:
+                    break
+
+            # Wait for all tasks to complete
+            await asyncio.gather(*task_futures, return_exceptions=True)
+
+        # Aggregate results based on strategy
+        if aggregation_strategy == "concatenate":
+            # Simply concatenate all responses
+            final_response = "".join(all_responses)
+        elif aggregation_strategy == "summarize":
+            # Add a summary header
+            final_response = f"## Tong hop tu {len(tasks)} chuyen gia:\n" + "".join(all_responses)
+        else:  # merge
+            final_response = "".join(all_responses)
+
+        yield {
+            "type": "aggregation_complete",
+            "data": {
+                "strategy": aggregation_strategy,
+                "num_tasks": len(tasks),
+                "final_response": final_response
+            }
+        }
+
     async def process_query(
         self,
         user_query: str,
         user_id: str,
         mode: Optional[Literal["auto", "ai", "pattern"]] = None,
         session_id: Optional[str] = None,
+        enable_multi_agent: bool = True,
         **kwargs
     ) -> AsyncIterator[Dict]:
         """
@@ -433,6 +1013,7 @@ class MultiAgentOrchestrator:
             user_id: User ID
             mode: Routing mode - "ai" (AI Router), "pattern" (keyword matching), "auto" (default from init)
             session_id: Session ID for conversation tracking
+            enable_multi_agent: If True, use multi-agent routing (default True)
             **kwargs: Additional parameters
 
         Yields:
@@ -463,14 +1044,222 @@ class MultiAgentOrchestrator:
             return
 
         try:
-            # 1. Route query to specialist using AI or pattern matching
-            if routing_mode == "ai" or routing_mode == "auto":
+            # 1. Route query - use multi-agent routing if enabled
+            if enable_multi_agent and (routing_mode == "ai" or routing_mode == "auto"):
                 yield {
                     "type": "status",
-                    "data": "🧠 AI Router đang phân tích và chọn chuyên gia phù hợp..."
+                    "data": "AI Router dang phan tich va chon chuyen gia phu hop..."
                 }
 
-                # Use AI-powered routing
+                # Use multi-agent routing
+                multi_routing = await self.specialist_router.route_multi_agent(user_query, user_id)
+
+                routing_time = time.time() - start_time
+                self.query_metrics["ai_router_time"] += routing_time
+
+                # Yield routing decision
+                yield {
+                    "type": "routing_decision",
+                    "data": {
+                        "mode": "multi_agent",
+                        "routing_method": routing_mode,
+                        "is_multi_agent": multi_routing.is_multi_agent,
+                        "execution_mode": multi_routing.execution_mode,
+                        "tasks": [
+                            {"specialist": t.specialist, "method": t.method, "depends_on": t.depends_on}
+                            for t in multi_routing.tasks
+                        ],
+                        "confidence": multi_routing.confidence,
+                        "reasoning": multi_routing.reasoning,
+                        "routing_time": routing_time
+                    }
+                }
+
+                # 2. Execute based on routing decision
+                if multi_routing.is_multi_agent:
+                    # Multi-agent workflow
+                    yield {
+                        "type": "status",
+                        "data": f"Se su dung {len(multi_routing.tasks)} agents ({multi_routing.execution_mode})..."
+                    }
+
+                    full_response = []
+                    async for event in self._execute_multi_agent_workflow(
+                        multi_routing, user_query, user_id, session_id
+                    ):
+                        if event["type"] == "chunk":
+                            full_response.append(event["data"])
+                        yield event
+
+                    # Update execution state
+                    exec_state.iterations += len(multi_routing.tasks)
+                    self.query_metrics["agent_mode_count"] += len(multi_routing.tasks)
+
+                    # Store final result
+                    shared_state = state_manager.get_shared_state(session_id)
+                    final_response = "".join(full_response)
+                    shared_state.set(f"response_{exec_state.iterations}", final_response, agent="MultiAgent")
+
+                    # Update conversation memory
+                    memory = state_manager.get_memory(session_id)
+                    memory.add_message(session_id, "user", user_query)
+                    memory.add_message(session_id, "assistant", final_response)
+
+                    # Send completion
+                    elapsed_time = time.time() - start_time
+                    yield {
+                        "type": "complete",
+                        "data": {
+                            "elapsed_time": elapsed_time,
+                            "mode_used": "multi_agent",
+                            "execution_mode": multi_routing.execution_mode,
+                            "specialists_used": [t.specialist for t in multi_routing.tasks],
+                            "num_agents": len(multi_routing.tasks),
+                            "response": final_response
+                        }
+                    }
+                    return
+
+                else:
+                    # Single agent - convert to single decision and continue
+                    routing_decision = multi_routing.to_single_decision()
+                    specialist_name = routing_decision.specialist
+                    method_name = routing_decision.method
+                    params = routing_decision.extracted_params
+                    routing_confidence = routing_decision.confidence
+                    routing_reasoning = routing_decision.reasoning
+                    # Skip yielding routing_decision again since we already yielded above
+                    # Jump directly to specialist execution
+                    self.query_metrics["specialist_usage"][specialist_name] += 1
+                    self.query_metrics["agent_mode_count"] += 1
+
+                    # Continue to specialist execution (skip the second routing_decision yield)
+                    # We need to jump to line after the routing_decision yield
+                    # So we'll use a flag or restructure the code
+                    # For now, let's inline the execution here
+
+                    # Ensure user_query and user_id are in params
+                    if "user_query" not in params:
+                        params["user_query"] = user_query
+                    if "user_id" not in params:
+                        params["user_id"] = user_id
+
+                    # Extract symbols from user_query if not provided
+                    if "symbols" not in params:
+                        extracted_symbols = self._extract_symbols(user_query)
+                        if extracted_symbols:
+                            params["symbols"] = extracted_symbols
+
+                    # Extract alert params for AlertManager
+                    if specialist_name == "AlertManager":
+                        # Detect create_alert intent even if AI chose wrong method
+                        query_lower = user_query.lower()
+                        if any(kw in query_lower for kw in ["tạo", "tao", "create", "đặt", "dat", "alert", "cảnh báo khi", "canh bao khi"]) and \
+                           any(kw in query_lower for kw in ["vượt", "vuot", ">", "<", "trên", "tren", "dưới", "duoi"]):
+                            method_name = "create_alert"  # Override to correct method
+
+                        if method_name == "create_alert":
+                            alert_params = self._parse_alert_params(user_query, user_id)
+                            params.update(alert_params)
+
+                    # Get specialist and execute
+                    specialist = self.specialists.get(specialist_name)
+                    if not specialist:
+                        yield {
+                            "type": "error",
+                            "data": {"error": f"Specialist {specialist_name} not found"}
+                        }
+                        return
+
+                    yield {
+                        "type": "status",
+                        "data": f"Dang su dung {specialist_name} de xu ly..."
+                    }
+
+                    # Execute specialist
+                    exec_state.iterations += 1
+
+                    # Method mapping
+                    method_mapping = {
+                        ("ScreenerSpecialist", "get_top"): "screen",
+                        ("AnalysisSpecialist", "get_price"): "analyze",
+                        ("AnalysisSpecialist", "predict"): "analyze",
+                        ("AlertManager", "list_alerts"): "get_alerts",
+                        ("SubscriptionManager", "list_subscriptions"): "get_subscriptions",
+                    }
+
+                    actual_method = method_mapping.get((specialist_name, method_name), method_name)
+
+                    if not hasattr(specialist, actual_method):
+                        default_methods = {
+                            "AnalysisSpecialist": "analyze",
+                            "ScreenerSpecialist": "screen",
+                            "AlertManager": "get_alerts",
+                            "InvestmentPlanner": "create_investment_plan",
+                            "DiscoverySpecialist": "discover",
+                            "SubscriptionManager": "get_subscriptions",
+                            "MarketContextSpecialist": "analyze",
+                            "ComparisonSpecialist": "analyze",
+                        }
+                        actual_method = default_methods.get(specialist_name, method_name)
+
+                    method = getattr(specialist, actual_method)
+                    full_response = []
+
+                    # Filter params to match method signature
+                    import inspect
+                    sig = inspect.signature(method)
+                    valid_params = {}
+                    for param_name in sig.parameters:
+                        if param_name == 'self':
+                            continue
+                        if param_name in params:
+                            valid_params[param_name] = params[param_name]
+
+                    result = method(**valid_params)
+
+                    if hasattr(result, '__aiter__'):
+                        async for chunk in result:
+                            chunk_str = chunk if isinstance(chunk, str) else str(chunk)
+                            full_response.append(chunk_str)
+                            yield {"type": "chunk", "data": chunk_str}
+                    elif hasattr(result, '__await__'):
+                        response = await result
+                        response_str = response if isinstance(response, str) else str(response)
+                        full_response.append(response_str)
+                        yield {"type": "chunk", "data": response_str}
+                    else:
+                        full_response.append(str(result))
+                        yield {"type": "chunk", "data": str(result)}
+
+                    # Store result and complete
+                    shared_state = state_manager.get_shared_state(session_id)
+                    shared_state.set(f"response_{exec_state.iterations}", "".join(full_response), agent=specialist_name)
+
+                    memory = state_manager.get_memory(session_id)
+                    memory.add_message(session_id, "user", user_query)
+                    memory.add_message(session_id, "assistant", "".join(full_response))
+
+                    elapsed_time = time.time() - start_time
+                    yield {
+                        "type": "complete",
+                        "data": {
+                            "elapsed_time": elapsed_time,
+                            "mode_used": "multi_agent",
+                            "specialist_used": specialist_name,
+                            "method_used": method_name,
+                            "response": "".join(full_response)
+                        }
+                    }
+                    return  # Exit after single-agent execution from multi-agent routing
+
+            elif routing_mode == "ai" or routing_mode == "auto":
+                yield {
+                    "type": "status",
+                    "data": "AI Router dang phan tich va chon chuyen gia phu hop..."
+                }
+
+                # Use single-agent AI routing
                 routing_decision = await self.specialist_router.route(user_query, user_id)
                 specialist_name = routing_decision.specialist
                 method_name = routing_decision.method
@@ -482,7 +1271,7 @@ class MultiAgentOrchestrator:
                 # Fallback to pattern matching
                 yield {
                     "type": "status",
-                    "data": "Đang phân tích yêu cầu..."
+                    "data": "Dang phan tich yeu cau..."
                 }
 
                 routing = self._classify_query(user_query, user_id)
@@ -518,6 +1307,12 @@ class MultiAgentOrchestrator:
                 params["user_query"] = user_query
             if "user_id" not in params:
                 params["user_id"] = user_id
+
+            # Extract symbols from user_query if not provided
+            if "symbols" not in params:
+                extracted_symbols = self._extract_symbols(user_query)
+                if extracted_symbols:
+                    params["symbols"] = extracted_symbols
 
             # 2. Get specialist and execute
             specialist = self.specialists.get(specialist_name)
@@ -601,18 +1396,22 @@ class MultiAgentOrchestrator:
             # Handle async iterator
             if hasattr(result, '__aiter__'):
                 async for chunk in result:
-                    full_response.append(chunk)
+                    # Ensure chunk is string
+                    chunk_str = chunk if isinstance(chunk, str) else str(chunk)
+                    full_response.append(chunk_str)
                     yield {
                         "type": "chunk",
-                        "data": chunk
+                        "data": chunk_str
                     }
             # Handle coroutine
             elif hasattr(result, '__await__'):
                 response = await result
-                full_response.append(response)
+                # Ensure response is string
+                response_str = response if isinstance(response, str) else str(response)
+                full_response.append(response_str)
                 yield {
                     "type": "chunk",
-                    "data": response
+                    "data": response_str
                 }
             # Handle sync result
             else:

@@ -64,9 +64,10 @@ class EnhancedStockConsumer:
         results = {
             "ticker": None,
             "success": False,
-            "indiators": False,
+            "indicators": False,
             "predictions": False,
             "alerts": 0,
+            "screener": False,
         }
 
         try:
@@ -79,8 +80,18 @@ class EnhancedStockConsumer:
             logger.info(f"Processing: {ticker}")
             logger.info(f"{'='*60}")
 
-            # Convert data thành DataFrame
-            if "data" in data and isinstance(data["data"], list):
+            # Check message format - support both old and new formats
+            # New format from kafka_stock_importer: {ticker, price_history, overview, fundamentals}
+            # Old format: {ticker, data, timestamp}
+            overview = data.get("overview", {})
+            fundamentals = data.get("fundamentals", {})
+
+            if "price_history" in data:
+                # New format from kafka_stock_importer
+                df = pd.DataFrame(data["price_history"])
+                logger.info(f"📊 New format detected (with overview/fundamentals)")
+            elif "data" in data and isinstance(data["data"], list):
+                # Old format
                 df = pd.DataFrame(data["data"])
             else:
                 logger.warning(f"Invalid message format for {ticker}")
@@ -132,11 +143,24 @@ class EnhancedStockConsumer:
             logger.info(f"💾 Saving to database...")
             saver = DataSaver()
 
-            # Save indicators
+            # Save indicators to stock_prices_1d
             saved_1d = saver.save_1d_data(ticker, df_with_indicators)
             if saved_1d > 0:
                 logger.info(f"✅ Saved {saved_1d} records to stock_prices_1d")
                 results["indicators"] = True
+
+            # Save to stock_screener (for screening functionality)
+            screener_saved = saver.save_screener_data(
+                ticker, df_with_indicators, overview, fundamentals
+            )
+            if screener_saved:
+                logger.info(f"✅ Saved screener data for {ticker}")
+                results["screener"] = True
+
+            # Save historical data to stock_1d
+            hist_saved = saver.save_historical_1d(ticker, df_with_indicators)
+            if hist_saved > 0:
+                logger.info(f"✅ Saved {hist_saved} historical records to stock_1d")
 
             # Save predictions
             if pred_3d or pred_48d:

@@ -41,23 +41,33 @@ class StockDataProducer:
         Args:
             ticker: Mã cổ phiếu (VD: 'VNM)
             data: DataFrame hoặc dict với stock data
+                  - DataFrame: Convert to old format {ticker, data, timestamp}
+                  - Dict with 'price_history': Pass through as-is (new format)
+                  - Dict without 'price_history': Wrap in old format
 
         Returns:
             bool: True nếu gửi thành công
         """
         try:
-            # Convert DataFrame to dict nếu cần
-            if hasattr(data, "to_dict"):
+            # Check if data is already in new format (from kafka_stock_importer)
+            if isinstance(data, dict) and "price_history" in data:
+                # New format - pass through directly
+                message = data
+            elif hasattr(data, "to_dict"):
+                # DataFrame - convert to old format
                 data_dict = data.to_dict(orient="records")
+                message = {
+                    "ticker": ticker,
+                    "data": data_dict,
+                    "timestamp": datetime.now().isoformat(),
+                }
             else:
-                data_dict = data
-
-            # Tạo message
-            message = {
-                "ticker": ticker,
-                "data": data_dict,
-                "timestamp": datetime.now().isoformat(),
-            }
+                # Other dict - wrap in old format
+                message = {
+                    "ticker": ticker,
+                    "data": data,
+                    "timestamp": datetime.now().isoformat(),
+                }
 
             # Gửi vào kafka với ticker làm key (để partition theo ticker)
             future = self.producer.send(

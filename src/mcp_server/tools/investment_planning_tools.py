@@ -535,13 +535,18 @@ async def generate_dca_plan(
             estimated_price = estimated_price * (1 + factor["monthly_change"] + variation)
 
         # Calculate shares (VN stocks trade in lots of 100)
+        # Fix: Correct calculation - first get integer shares, then round to lot of 100
         shares_exact = monthly_investment / estimated_price
-        shares_rounded = int(shares_exact / 100) * 100  # Round to nearest 100
+        shares_int = int(shares_exact)  # First convert to integer
+        shares_rounded = (shares_int // 100) * 100  # Then round DOWN to nearest 100 (lot)
 
         if shares_rounded == 0:
             shares_rounded = 100  # Minimum 1 lot
 
-        actual_investment = shares_rounded * estimated_price
+        # IMPORTANT: For DCA, actual_investment = monthly_investment (fixed amount per month)
+        # The shares calculated above are based on this fixed investment
+        # User invests the SAME amount each month, shares vary based on price
+        actual_investment = monthly_investment
 
         monthly_plan.append({
             "month": month + 1,
@@ -558,7 +563,13 @@ async def generate_dca_plan(
         total_invested += actual_investment
 
     # Calculate summary statistics
-    avg_price = total_invested / total_shares if total_shares > 0 else 0
+    # For DCA, average price = weighted average of purchase prices
+    # Sum(shares_bought * price_at_purchase) / total_shares
+    total_cost_by_price = sum(
+        entry["shares_to_buy"] * entry["estimated_price"]
+        for entry in monthly_plan
+    )
+    avg_price = total_cost_by_price / total_shares if total_shares > 0 else 0
     final_price = monthly_plan[-1]["estimated_price"] if monthly_plan else current_price
     final_value = total_shares * final_price
     profit_loss = final_value - total_invested

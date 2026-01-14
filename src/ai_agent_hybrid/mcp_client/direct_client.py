@@ -9,6 +9,15 @@ Used as a drop-in replacement for EnhancedMCPClient when subprocess spawning fai
 
 import sys
 import os
+import io
+
+# Fix encoding for Windows terminal (vnstock uses emojis)
+# Only wrap if stdout/stderr have a buffer attribute (real file objects, not StringIO)
+if sys.stdout and hasattr(sys.stdout, 'buffer') and sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if sys.stderr and hasattr(sys.stderr, 'buffer') and sys.stderr.encoding != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 from pathlib import Path
 from typing import Any, Dict, Optional
 import asyncio
@@ -179,6 +188,10 @@ class DirectMCPClient:
     async def disconnect(self):
         """No-op for direct client"""
         pass
+
+    def has_tool(self, tool_name: str) -> bool:
+        """Check if a tool is available"""
+        return tool_name in self._tools
 
     def _get_cache_key(self, tool_name: str, arguments: Dict) -> str:
         """Generate cache key"""

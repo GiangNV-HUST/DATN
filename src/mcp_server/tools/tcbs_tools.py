@@ -2,14 +2,253 @@
 TCBS/VCI API Tools for MCP Server
 Provides company info, financial data, and market data from TCBS/VCI sources
 """
-import asyncio
+import sys
+import os
 import logging
+
+# ============================================================================
+# CRITICAL: Suppress vnstock logging BEFORE import to prevent I/O errors
+# vnstock library uses logger.info/error internally which fails in thread pools
+# when stdout/stderr are closed. This must happen BEFORE importing vnstock.
+# ============================================================================
+class _SafeStreamHandler(logging.StreamHandler):
+    """A StreamHandler that silently ignores I/O errors (for thread safety)"""
+    def emit(self, record):
+        try:
+            super().emit(record)
+        except (ValueError, OSError, IOError):
+            pass
+
+def _suppress_vnstock_logging():
+    """Suppress all vnstock-related logging completely"""
+    vnstock_loggers = [
+        'vnstock', 'vnstock.explorer', 'vnstock.common', 'vnstock.core',
+        'vnai', 'vnstock.explorer.vci', 'vnstock.explorer.tcbs', 'vnstock.quote',
+        'vnstock.common.data', 'vnstock.common.client', 'vnstock.core.utils',
+        'vnstock.core.utils.client', 'vnstock.explorer.tcbs.screener'
+    ]
+    for logger_name in vnstock_loggers:
+        vnlogger = logging.getLogger(logger_name)
+        vnlogger.setLevel(logging.CRITICAL + 100)  # Beyond CRITICAL
+        vnlogger.propagate = False
+        vnlogger.disabled = True
+        vnlogger.handlers = []
+        vnlogger.addHandler(logging.NullHandler())
+
+def _install_safe_root_handler():
+    """Replace root logger handlers with safe versions that ignore I/O errors"""
+    root_logger = logging.getLogger()
+    new_handlers = []
+    for handler in root_logger.handlers:
+        if isinstance(handler, logging.StreamHandler) and not isinstance(handler, _SafeStreamHandler):
+            safe_handler = _SafeStreamHandler(handler.stream)
+            safe_handler.setLevel(handler.level)
+            safe_handler.setFormatter(handler.formatter)
+            new_handlers.append(safe_handler)
+        else:
+            new_handlers.append(handler)
+    root_logger.handlers = new_handlers
+
+# Suppress BEFORE import
+_suppress_vnstock_logging()
+_install_safe_root_handler()
+
+# Suppress vnstock promo output (contains emojis that cause encoding errors on Windows)
+# Must be done BEFORE importing vnstock
+_original_stdout = sys.stdout
+_original_stderr = sys.stderr
+try:
+    sys.stdout = open(os.devnull, 'w', encoding='utf-8')
+    sys.stderr = open(os.devnull, 'w', encoding='utf-8')
+    from vnstock import Vnstock
+finally:
+    sys.stdout.close()
+    sys.stderr.close()
+    sys.stdout = _original_stdout
+    sys.stderr = _original_stderr
+
+# Suppress again after import in case vnstock created new loggers during init
+_suppress_vnstock_logging()
+_install_safe_root_handler()
+
+import asyncio
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
+from decimal import Decimal
 import pandas as pd
-from vnstock import Vnstock
+
+from ..shared.database import execute_sql_in_thread
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# DATABASE HELPERS - DB-first strategy for faster response
+# ============================================================================
+
+def _serialize_db_value(val):
+    """Convert database values to JSON-serializable format."""
+    if isinstance(val, Decimal):
+        return float(val)
+    if isinstance(val, (datetime, )):
+        return val.isoformat()
+    if hasattr(val, 'isoformat'):  # date, datetime
+        return val.isoformat()
+    return val
+
+
+def _get_company_overview_from_db(symbol: str) -> Optional[Dict]:
+    """
+    Get company overview from stock_screener table (instant).
+    Maps screener fields to overview format.
+    """
+    sql = f"""
+    SELECT
+        ticker, exchange, short_name as company_name, industry_name, industry_code,
+        close as price, volume, market_cap,
+        pe as p_e, pb as p_b,
+        roe, roa, eps,
+        revenue_growth, profit_growth,
+        free_float_rate, foreign_rate,
+        created_at as last_updated
+    FROM stock.stock_screener
+    WHERE ticker = '{symbol.upper()}'
+    LIMIT 1
+    """
+    records, is_error = execute_sql_in_thread(sql)
+
+    if is_error or not records or (len(records) == 1 and 'message' in records[0]):
+        return None
+
+    row = records[0]
+    return {k: _serialize_db_value(v) for k, v in row.items()}
+
+
+def _get_financial_ratios_from_db(symbol: str, period: str = "quarter", num_periods: int = 8) -> Optional[List[Dict]]:
+    """
+    Get financial ratios from financial_ratios table (instant).
+    """
+    period_filter = "Q" if period == "quarter" else "Y"
+    sql = f"""
+    SELECT *
+    FROM stock.financial_ratios
+    WHERE ticker = '{symbol.upper()}'
+    AND period_type = '{period_filter}'
+    ORDER BY year DESC, quarter DESC
+    LIMIT {num_periods}
+    """
+    records, is_error = execute_sql_in_thread(sql)
+
+    if is_error or not records or (len(records) == 1 and 'message' in records[0]):
+        return None
+
+    return [{k: _serialize_db_value(v) for k, v in row.items()} for row in records]
+
+
+def _get_income_statement_from_db(symbol: str, period: str = "quarter", num_periods: int = 4) -> Optional[List[Dict]]:
+    """
+    Get income statement from income_statement table (instant).
+    """
+    period_filter = "Q" if period == "quarter" else "Y"
+    sql = f"""
+    SELECT *
+    FROM stock.income_statement
+    WHERE ticker = '{symbol.upper()}'
+    AND period_type = '{period_filter}'
+    ORDER BY year DESC, quarter DESC
+    LIMIT {num_periods}
+    """
+    records, is_error = execute_sql_in_thread(sql)
+
+    if is_error or not records or (len(records) == 1 and 'message' in records[0]):
+        return None
+
+    return [{k: _serialize_db_value(v) for k, v in row.items()} for row in records]
+
+
+def _get_balance_sheet_from_db(symbol: str, period: str = "quarter", num_periods: int = 4) -> Optional[List[Dict]]:
+    """
+    Get balance sheet from balance_sheet table (instant).
+    """
+    period_filter = "Q" if period == "quarter" else "Y"
+    sql = f"""
+    SELECT *
+    FROM stock.balance_sheet
+    WHERE ticker = '{symbol.upper()}'
+    AND period_type = '{period_filter}'
+    ORDER BY year DESC, quarter DESC
+    LIMIT {num_periods}
+    """
+    records, is_error = execute_sql_in_thread(sql)
+
+    if is_error or not records or (len(records) == 1 and 'message' in records[0]):
+        return None
+
+    return [{k: _serialize_db_value(v) for k, v in row.items()} for row in records]
+
+
+def _get_cash_flow_from_db(symbol: str, period: str = "quarter", num_periods: int = 4) -> Optional[List[Dict]]:
+    """
+    Get cash flow from cash_flow table (instant).
+    """
+    period_filter = "Q" if period == "quarter" else "Y"
+    sql = f"""
+    SELECT *
+    FROM stock.cash_flow
+    WHERE ticker = '{symbol.upper()}'
+    AND period_type = '{period_filter}'
+    ORDER BY year DESC, quarter DESC
+    LIMIT {num_periods}
+    """
+    records, is_error = execute_sql_in_thread(sql)
+
+    if is_error or not records or (len(records) == 1 and 'message' in records[0]):
+        return None
+
+    return [{k: _serialize_db_value(v) for k, v in row.items()} for row in records]
+
+
+def _get_price_history_from_db(symbol: str, start_date: str, end_date: str) -> Optional[List[Dict]]:
+    """
+    Get price history from stock_prices_1d table (instant).
+    """
+    sql = f"""
+    SELECT time, ticker, open, high, low, close, volume,
+           ma5, ma10, ma20, ma50, ma100,
+           rsi, macd_main, macd_signal, macd_diff,
+           bb_upper, bb_middle, bb_lower
+    FROM stock.stock_prices_1d
+    WHERE ticker = '{symbol.upper()}'
+    AND time >= '{start_date}'
+    AND time <= '{end_date}'
+    ORDER BY time ASC
+    """
+    records, is_error = execute_sql_in_thread(sql)
+
+    if is_error or not records or (len(records) == 1 and 'message' in records[0]):
+        return None
+
+    return [{k: _serialize_db_value(v) for k, v in row.items()} for row in records]
+
+
+def _get_intraday_data_from_db(symbol: str) -> Optional[List[Dict]]:
+    """
+    Get intraday data from stock_prices_1m table (instant).
+    Returns today's minute-level data.
+    """
+    sql = f"""
+    SELECT time, ticker, open, high, low, close, volume
+    FROM stock.stock_prices_1m
+    WHERE ticker = '{symbol.upper()}'
+    AND time >= CURRENT_DATE
+    ORDER BY time ASC
+    """
+    records, is_error = execute_sql_in_thread(sql)
+
+    if is_error or not records or (len(records) == 1 and 'message' in records[0]):
+        return None
+
+    return [{k: _serialize_db_value(v) for k, v in row.items()} for row in records]
 
 
 def _safe_to_dict(df: pd.DataFrame) -> List[Dict]:
@@ -23,7 +262,8 @@ def _safe_to_dict(df: pd.DataFrame) -> List[Dict]:
 
 async def get_company_overview_mcp(symbol: str) -> Dict[str, Any]:
     """
-    Get company overview information from VCI
+    Get company overview information.
+    Strategy: DATABASE first (instant) -> VCI API fallback
 
     Args:
         symbol: Stock symbol (e.g., VCB, FPT)
@@ -31,6 +271,20 @@ async def get_company_overview_mcp(symbol: str) -> Dict[str, Any]:
     Returns:
         Dict containing company overview data
     """
+    # Try DATABASE first (instant response)
+    db_data = _get_company_overview_from_db(symbol)
+    if db_data:
+        logger.info(f"[DB-first] Got company overview for {symbol} from database")
+        return {
+            "status": "success",
+            "symbol": symbol.upper(),
+            "data": db_data,
+            "source": "DATABASE"
+        }
+
+    # Fallback to VCI API
+    logger.info(f"[DB-first] No DB data for {symbol}, falling back to VCI API")
+
     def _sync_fetch():
         try:
             stock = Vnstock().stock(symbol=symbol.upper(), source='VCI')
@@ -115,7 +369,8 @@ async def get_financial_ratios_mcp(
     num_periods: int = 8
 ) -> Dict[str, Any]:
     """
-    Get financial ratios from VCI
+    Get financial ratios.
+    Strategy: DATABASE first (instant) -> VCI API fallback
 
     Args:
         symbol: Stock symbol
@@ -125,6 +380,22 @@ async def get_financial_ratios_mcp(
     Returns:
         Dict containing financial ratios
     """
+    # Try DATABASE first (instant response)
+    db_data = _get_financial_ratios_from_db(symbol, period, num_periods)
+    if db_data:
+        logger.info(f"[DB-first] Got financial ratios for {symbol} from database")
+        return {
+            "status": "success",
+            "symbol": symbol.upper(),
+            "period": period,
+            "data": db_data,
+            "count": len(db_data),
+            "source": "DATABASE"
+        }
+
+    # Fallback to VCI API
+    logger.info(f"[DB-first] No DB ratios for {symbol}, falling back to VCI API")
+
     def _sync_fetch():
         try:
             stock = Vnstock().stock(symbol=symbol.upper(), source='VCI')
@@ -165,7 +436,8 @@ async def get_income_statement_mcp(
     num_periods: int = 4
 ) -> Dict[str, Any]:
     """
-    Get income statement from VCI
+    Get income statement.
+    Strategy: DATABASE first (instant) -> VCI API fallback
 
     Args:
         symbol: Stock symbol
@@ -175,6 +447,22 @@ async def get_income_statement_mcp(
     Returns:
         Dict containing income statement data
     """
+    # Try DATABASE first (instant response)
+    db_data = _get_income_statement_from_db(symbol, period, num_periods)
+    if db_data:
+        logger.info(f"[DB-first] Got income statement for {symbol} from database")
+        return {
+            "status": "success",
+            "symbol": symbol.upper(),
+            "period": period,
+            "data": db_data,
+            "count": len(db_data),
+            "source": "DATABASE"
+        }
+
+    # Fallback to VCI API
+    logger.info(f"[DB-first] No DB income statement for {symbol}, falling back to VCI API")
+
     def _sync_fetch():
         try:
             stock = Vnstock().stock(symbol=symbol.upper(), source='VCI')
@@ -214,7 +502,8 @@ async def get_balance_sheet_mcp(
     num_periods: int = 4
 ) -> Dict[str, Any]:
     """
-    Get balance sheet from VCI
+    Get balance sheet.
+    Strategy: DATABASE first (instant) -> VCI API fallback
 
     Args:
         symbol: Stock symbol
@@ -224,6 +513,22 @@ async def get_balance_sheet_mcp(
     Returns:
         Dict containing balance sheet data
     """
+    # Try DATABASE first (instant response)
+    db_data = _get_balance_sheet_from_db(symbol, period, num_periods)
+    if db_data:
+        logger.info(f"[DB-first] Got balance sheet for {symbol} from database")
+        return {
+            "status": "success",
+            "symbol": symbol.upper(),
+            "period": period,
+            "data": db_data,
+            "count": len(db_data),
+            "source": "DATABASE"
+        }
+
+    # Fallback to VCI API
+    logger.info(f"[DB-first] No DB balance sheet for {symbol}, falling back to VCI API")
+
     def _sync_fetch():
         try:
             stock = Vnstock().stock(symbol=symbol.upper(), source='VCI')
@@ -263,7 +568,8 @@ async def get_cash_flow_mcp(
     num_periods: int = 4
 ) -> Dict[str, Any]:
     """
-    Get cash flow statement from VCI
+    Get cash flow statement.
+    Strategy: DATABASE first (instant) -> VCI API fallback
 
     Args:
         symbol: Stock symbol
@@ -273,6 +579,22 @@ async def get_cash_flow_mcp(
     Returns:
         Dict containing cash flow data
     """
+    # Try DATABASE first (instant response)
+    db_data = _get_cash_flow_from_db(symbol, period, num_periods)
+    if db_data:
+        logger.info(f"[DB-first] Got cash flow for {symbol} from database")
+        return {
+            "status": "success",
+            "symbol": symbol.upper(),
+            "period": period,
+            "data": db_data,
+            "count": len(db_data),
+            "source": "DATABASE"
+        }
+
+    # Fallback to VCI API
+    logger.info(f"[DB-first] No DB cash flow for {symbol}, falling back to VCI API")
+
     def _sync_fetch():
         try:
             stock = Vnstock().stock(symbol=symbol.upper(), source='VCI')
@@ -313,7 +635,8 @@ async def get_price_history_mcp(
     lookback_days: int = 30
 ) -> Dict[str, Any]:
     """
-    Get price history from VCI
+    Get price history.
+    Strategy: DATABASE first (instant) -> VCI API fallback
 
     Args:
         symbol: Stock symbol
@@ -324,24 +647,46 @@ async def get_price_history_mcp(
     Returns:
         Dict containing price history
     """
+    # Calculate dates
+    if end_date:
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+    else:
+        end_dt = datetime.now()
+
+    if start_date:
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+    else:
+        start_dt = end_dt - timedelta(days=lookback_days)
+
+    start_date_str = start_dt.strftime('%Y-%m-%d')
+    end_date_str = end_dt.strftime('%Y-%m-%d')
+
+    # Try DATABASE first (instant response)
+    db_data = _get_price_history_from_db(symbol, start_date_str, end_date_str)
+    if db_data:
+        logger.info(f"[DB-first] Got price history for {symbol} from database ({len(db_data)} records)")
+        latest = db_data[-1] if db_data else None
+        return {
+            "status": "success",
+            "symbol": symbol.upper(),
+            "start_date": start_date_str,
+            "end_date": end_date_str,
+            "data": db_data,
+            "latest": latest,
+            "count": len(db_data),
+            "source": "DATABASE"
+        }
+
+    # Fallback to VCI API
+    logger.info(f"[DB-first] No DB price history for {symbol}, falling back to VCI API")
+
     def _sync_fetch():
         try:
             stock = Vnstock().stock(symbol=symbol.upper(), source='VCI')
 
-            # Calculate dates
-            if end_date:
-                end_dt = datetime.strptime(end_date, '%Y-%m-%d')
-            else:
-                end_dt = datetime.now()
-
-            if start_date:
-                start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-            else:
-                start_dt = end_dt - timedelta(days=lookback_days)
-
             history = stock.quote.history(
-                start=start_dt.strftime('%Y-%m-%d'),
-                end=end_dt.strftime('%Y-%m-%d')
+                start=start_date_str,
+                end=end_date_str
             )
 
             if history is None or history.empty:
@@ -358,8 +703,8 @@ async def get_price_history_mcp(
             return {
                 "status": "success",
                 "symbol": symbol.upper(),
-                "start_date": start_dt.strftime('%Y-%m-%d'),
-                "end_date": end_dt.strftime('%Y-%m-%d'),
+                "start_date": start_date_str,
+                "end_date": end_date_str,
                 "data": data,
                 "latest": latest,
                 "count": len(data),
@@ -378,7 +723,8 @@ async def get_price_history_mcp(
 
 async def get_intraday_data_mcp(symbol: str) -> Dict[str, Any]:
     """
-    Get intraday trading data from VCI
+    Get intraday trading data.
+    Strategy: DATABASE first (instant) -> VCI API fallback
 
     Args:
         symbol: Stock symbol
@@ -386,6 +732,21 @@ async def get_intraday_data_mcp(symbol: str) -> Dict[str, Any]:
     Returns:
         Dict containing intraday data
     """
+    # Try DATABASE first (instant response)
+    db_data = _get_intraday_data_from_db(symbol)
+    if db_data:
+        logger.info(f"[DB-first] Got intraday data for {symbol} from database ({len(db_data)} records)")
+        return {
+            "status": "success",
+            "symbol": symbol.upper(),
+            "data": db_data,
+            "count": len(db_data),
+            "source": "DATABASE"
+        }
+
+    # Fallback to VCI API
+    logger.info(f"[DB-first] No DB intraday data for {symbol}, falling back to VCI API")
+
     def _sync_fetch():
         try:
             stock = Vnstock().stock(symbol=symbol.upper(), source='VCI')

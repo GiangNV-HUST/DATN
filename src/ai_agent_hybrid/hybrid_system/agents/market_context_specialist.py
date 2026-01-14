@@ -162,107 +162,101 @@ Hay cung cap cai nhin tong quan, chinh xac ve thi truong!
             return {"status": "error", "message": str(e)}
 
     async def _get_index_data(self) -> Dict:
-        """Get index data using proxy symbols or estimation"""
+        """Get index data from database instead of vnstock API to avoid rate limiting"""
         try:
-            from vnstock import Vnstock
-            import asyncio
+            # Use data from database instead of vnstock API calls
+            # This is much faster and doesn't have rate limits
+            major_symbols = ['VCB', 'TCB', 'FPT', 'VNM', 'HPG']
 
-            def _sync_fetch():
-                results = {}
+            details_result = await self.mcp_client.call_tool(
+                "get_stock_details_from_tcbs",
+                {"symbols": major_symbols}
+            )
 
-                # Try to get VN30 ETF as proxy for VN-Index
-                try:
-                    stock = Vnstock().stock(symbol='E1VFVN30', source='VCI')
-                    today = datetime.now().strftime('%Y-%m-%d')
-                    yesterday = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
-                    history = stock.quote.history(start=yesterday, end=today)
+            results = {}
 
-                    if history is not None and not history.empty:
-                        latest = history.iloc[-1].to_dict()
-                        prev = history.iloc[-2].to_dict() if len(history) > 1 else latest
-
-                        change = latest.get('close', 0) - prev.get('close', 0)
-                        change_pct = (change / prev.get('close', 1)) * 100 if prev.get('close') else 0
-
-                        results['VN30_ETF'] = {
-                            'close': latest.get('close'),
-                            'change': round(change, 2),
-                            'change_pct': round(change_pct, 2),
-                            'volume': latest.get('volume'),
-                            'note': 'Proxy for VN-Index trend'
+            if details_result.get("status") == "success":
+                for stock in details_result.get("data", []):
+                    ticker = stock.get("ticker")
+                    if ticker:
+                        results[ticker] = {
+                            'close': stock.get('close'),
+                            'change': stock.get('change_1d'),
+                            'change_pct': stock.get('change_percent_1d'),
+                            'volume': stock.get('avg_volume_20d')
                         }
-                except Exception as e:
-                    results['VN30_ETF'] = {'error': str(e)}
 
-                # Get major bank stocks as market proxy
-                major_symbols = ['VCB', 'TCB', 'FPT', 'VNM', 'VHM']
-                try:
-                    for sym in major_symbols[:3]:
-                        stock = Vnstock().stock(symbol=sym, source='VCI')
-                        today = datetime.now().strftime('%Y-%m-%d')
-                        yesterday = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
-                        history = stock.quote.history(start=yesterday, end=today)
+            # Add market breadth note
+            results['note'] = 'Using major stocks as market proxy (VCB, TCB, FPT, VNM, HPG)'
 
-                        if history is not None and not history.empty:
-                            latest = history.iloc[-1].to_dict()
-                            prev = history.iloc[-2].to_dict() if len(history) > 1 else latest
-
-                            change = latest.get('close', 0) - prev.get('close', 0)
-                            change_pct = (change / prev.get('close', 1)) * 100 if prev.get('close') else 0
-
-                            results[sym] = {
-                                'close': latest.get('close'),
-                                'change': round(change, 2),
-                                'change_pct': round(change_pct, 2)
-                            }
-                except Exception as e:
-                    pass
-
-                return results
-
-            return await asyncio.to_thread(_sync_fetch)
+            return results
 
         except Exception as e:
             return {"error": str(e)}
 
-    async def get_sector_performance(self) -> Dict:
+    async def get_sector_performance(self, sectors_filter: List[str] = None) -> Dict:
         """
-        Get performance by industry sector
+        Get performance by industry sector - OPTIMIZED to use single API call
+
+        Args:
+            sectors_filter: Optional list of specific sectors to check
 
         Returns:
             Dict with sector performance data
         """
         try:
-            # Define major sectors and their representative stocks
+            # Define major sectors and their representative stocks (reduced to 3 per sector)
             sectors = {
-                "Ngan hang": ["VCB", "TCB", "MBB", "BID", "CTG", "ACB", "VPB", "STB", "HDB", "TPB"],
-                "Bat dong san": ["VHM", "VIC", "NVL", "KDH", "DXG", "NLG", "PDR", "DIG", "CEO", "LDG"],
-                "Cong nghe": ["FPT", "CMG", "ELC", "SAM"],
-                "Thep": ["HPG", "HSG", "NKG", "SMC", "TLH"],
-                "Dau khi": ["GAS", "PLX", "PVD", "PVS", "BSR"],
-                "Thuc pham": ["VNM", "MSN", "SAB", "QNS", "MCH"],
-                "Dien": ["POW", "REE", "PC1", "GEG", "NT2"],
-                "Chung khoan": ["SSI", "VCI", "HCM", "VND", "SHS"]
+                "Ngan hang": ["VCB", "TCB", "MBB"],
+                "Bat dong san": ["VHM", "VIC", "NVL"],
+                "Cong nghe": ["FPT", "CMG", "ELC"],
+                "Thep": ["HPG", "HSG", "NKG"],
+                "Dau khi": ["GAS", "PLX", "PVD"],
+                "Thuc pham": ["VNM", "MSN", "SAB"],
+                "Dien": ["POW", "REE", "PC1"],
+                "Chung khoan": ["SSI", "VCI", "HCM"]
             }
+
+            # Filter sectors if specified
+            if sectors_filter:
+                sectors = {k: v for k, v in sectors.items()
+                          if any(sf.lower() in k.lower() for sf in sectors_filter)}
+
+            # Collect ALL symbols and make ONE API call
+            all_symbols = []
+            symbol_to_sector = {}
+            for sector_name, symbols in sectors.items():
+                for sym in symbols:
+                    all_symbols.append(sym)
+                    symbol_to_sector[sym] = sector_name
+
+            # SINGLE API call for all symbols
+            all_data = await self.mcp_client.call_tool(
+                "get_stock_details_from_tcbs",
+                {"symbols": all_symbols}
+            )
 
             sector_results = {}
 
-            for sector_name, symbols in sectors.items():
-                # Get data for sector stocks
-                sector_data = await self.mcp_client.call_tool(
-                    "get_stock_details_from_tcbs",
-                    {"symbols": symbols[:5]}  # Top 5 per sector
-                )
+            if all_data.get("status") == "success":
+                stocks = all_data.get("data", [])
 
-                if sector_data.get("status") == "success":
-                    stocks = sector_data.get("data", [])
+                # Group by sector
+                sector_stocks = {}
+                for stock in stocks:
+                    ticker = stock.get("ticker")
+                    if ticker in symbol_to_sector:
+                        sector_name = symbol_to_sector[ticker]
+                        if sector_name not in sector_stocks:
+                            sector_stocks[sector_name] = []
+                        sector_stocks[sector_name].append(stock)
 
-                    # Calculate average sector change
-                    changes = [s.get("change_percent_1d", 0) or 0 for s in stocks]
+                # Calculate sector metrics
+                for sector_name, stocks_list in sector_stocks.items():
+                    changes = [s.get("change_percent_1d", 0) or 0 for s in stocks_list]
                     avg_change = sum(changes) / len(changes) if changes else 0
 
-                    # Get top performers in sector
-                    sorted_stocks = sorted(stocks, key=lambda x: x.get("change_percent_1d", 0) or 0, reverse=True)
+                    sorted_stocks = sorted(stocks_list, key=lambda x: x.get("change_percent_1d", 0) or 0, reverse=True)
 
                     sector_results[sector_name] = {
                         "avg_change_pct": round(avg_change, 2),
@@ -270,7 +264,7 @@ Hay cung cap cai nhin tong quan, chinh xac ve thi truong!
                         "top_gainer_change": sorted_stocks[0].get("change_percent_1d") if sorted_stocks else None,
                         "top_loser": sorted_stocks[-1].get("ticker") if sorted_stocks else None,
                         "top_loser_change": sorted_stocks[-1].get("change_percent_1d") if sorted_stocks else None,
-                        "stocks_count": len(stocks)
+                        "stocks_count": len(stocks_list)
                     }
 
             # Sort sectors by performance
@@ -371,12 +365,53 @@ Hay cung cap cai nhin tong quan, chinh xac ve thi truong!
             Analysis chunks as they're generated
         """
         self.stats["total_queries"] += 1
+        query_lower = user_query.lower()
 
         try:
-            # Gather market data
-            market_overview = await self.get_market_overview()
-            sector_performance = await self.get_sector_performance()
-            top_movers = await self.get_market_top_movers()
+            # Gather market data with error handling for each component
+            market_overview = {"status": "unavailable", "message": "Skipped"}
+            sector_performance = {"status": "unavailable", "message": "Skipped"}
+            top_movers = {"status": "unavailable", "message": "Skipped"}
+
+            # Check if user is asking about specific sectors
+            sector_keywords = {
+                "ngan hang": ["ngan hang", "ngân hàng", "bank"],
+                "cong nghe": ["cong nghe", "công nghệ", "tech"],
+                "bat dong san": ["bat dong san", "bất động sản", "bds", "real estate"],
+                "thep": ["thép", "thep", "steel"],
+                "dau khi": ["dầu khí", "dau khi", "oil", "gas"],
+                "thuc pham": ["thực phẩm", "thuc pham", "food"],
+                "dien": ["điện", "dien", "electric", "power"],
+                "chung khoan": ["chứng khoán", "chung khoan", "securities"]
+            }
+
+            # Detect which sectors user is asking about
+            sectors_to_check = []
+            for sector, keywords in sector_keywords.items():
+                if any(kw in query_lower for kw in keywords):
+                    sectors_to_check.append(sector)
+
+            # Get market overview (most important)
+            try:
+                market_overview = await self.get_market_overview()
+            except Exception as e:
+                market_overview = {"status": "error", "message": str(e)}
+
+            # Get sector performance if user asks about sectors (now optimized - single API call)
+            if sectors_to_check or any(kw in query_lower for kw in ["ngành", "nganh", "sector", "hiệu suất ngành"]):
+                try:
+                    # Pass specific sectors or None for all
+                    sector_performance = await self.get_sector_performance(
+                        sectors_filter=sectors_to_check if sectors_to_check else None
+                    )
+                except Exception as e:
+                    sector_performance = {"status": "error", "message": str(e)}
+
+            # Get top movers from database (fast)
+            try:
+                top_movers = await self.get_market_top_movers(limit=5)
+            except Exception as e:
+                top_movers = {"status": "error", "message": str(e)}
 
             # Store in shared state if provided
             if shared_state is not None:
@@ -396,15 +431,26 @@ Dua tren du lieu thi truong sau, hay tra loi cau hoi cua user:
 **Sector Performance:**
 {sector_performance}
 
-**Top Movers:**
+**Top Movers (Tang/Giam manh, Khoi luong lon):**
 {top_movers}
 
 Hay phan tich va tra loi theo format:
 1. Tong quan thi truong (chi so chinh, market breadth)
-2. Nganh noi bat (tang/giam manh)
-3. Co phieu dang chu y
+2. Hieu suat nganh (neu user hoi ve nganh)
+3. Co phieu dang chu y (tang/giam manh, khoi luong lon)
 4. Danh gia xu huong va tam ly thi truong
 5. Khuyen nghi tong quan
+
+**NEU USER HOI SO SANH NGANH** (vi du: ngan hang vs cong nghe):
+1. So sanh hieu suat (% thay doi) cua tung nganh
+2. Top co phieu dai dien cua moi nganh
+3. Chi so P/E, P/B, ROE trung binh cua tung nganh (neu co)
+4. Nganh nao dang hap dan hon de dau tu
+5. De xuat 2-3 co phieu tot nhat MỖI NGÀNH
+
+Neu user hoi de xuat co phieu, hay de xuat 2-3 co phieu tot nhat trong nganh do.
+
+Luu y: Neu du lieu bi loi hoac khong co, hay thong bao cho user va dua ra phan tich chung dua tren thong tin co san.
 """
 
             # Generate analysis with OpenAI

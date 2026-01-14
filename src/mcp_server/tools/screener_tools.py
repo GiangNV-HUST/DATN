@@ -1,18 +1,17 @@
 """
 Stock screener tools for MCP server
-Provides advanced stock filtering with 80+ columns
+Provides stock filtering with technical indicators and fundamentals
 
 Data Source Strategy:
-- PRIMARY: TCBS API (has 80+ columns including technical indicators, fundamentals)
-- FALLBACK: Database (stock_prices_1d) when TCBS API fails
-- Database has basic data: price, volume, MA, RSI only
+- PRIMARY: Database (stock_screener table) - has price, volume, RSI, MA, PE, ROE, etc.
+- NOTE: TCBS screener API is currently returning 404 errors (as of Jan 2026)
+- Data is populated via Kafka pipeline from VnStock API
 """
 import asyncio
 import operator
 import logging
 from typing import Dict, List, Tuple, Optional, Union, Any
 import pandas as pd
-from vnstock import Vnstock
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -42,12 +41,18 @@ def parse_condition(cond_str: str, column: str) -> Tuple[callable, Any]:
     Parse a condition string like '>15' into an operator function and value
 
     Args:
-        cond_str: String condition (e.g., '>15', '==Ngân hàng')
+        cond_str: String condition (e.g., '>15', '==Ngân hàng', 'contains:Ngân hàng')
         column: Column name to determine if we should parse as string or float
 
     Returns:
         Tuple of (operator function, value)
     """
+    # Handle special 'contains:' prefix for string contains matching
+    if cond_str.startswith('contains:'):
+        value_str = cond_str[9:]  # Remove 'contains:' prefix
+        # Return a lambda that does case-insensitive contains check
+        return lambda col, val: col.str.lower().str.contains(val.lower(), na=False), value_str
+
     for op_str in ['>=', '<=', '==', '!=', '>', '<']:
         if cond_str.startswith(op_str):
             value_str = cond_str[len(op_str):]
@@ -106,7 +111,7 @@ def sort_results(df: pd.DataFrame, sort_by: str = "avg_trading_value_20d", ascen
 
 def screen_stocks_from_database(
     conditions: Dict[str, str],
-    sort_by: str = "volume",
+    sort_by: str = "avg_trading_value_20d",
     ascending: bool = False,
     limit: int = 20
 ) -> pd.DataFrame:
@@ -125,23 +130,34 @@ def screen_stocks_from_database(
     try:
         from ..shared.database import execute_sql_in_thread
 
-        # Get latest stock data from database
+        # Get stock data from stock_screener table (imported from vnstock)
         sql_query = """
-        WITH latest_data AS (
-            SELECT DISTINCT ON (ticker)
-                ticker,
-                time,
-                close,
-                volume,
-                ma5,
-                ma20,
-                rsi
-            FROM stock.stock_prices_1d
-            WHERE time >= CURRENT_DATE - INTERVAL '7 days'
-            ORDER BY ticker, time DESC
-        )
-        SELECT * FROM latest_data
-        ORDER BY volume DESC
+        SELECT
+            ticker,
+            exchange,
+            industry,
+            close,
+            open,
+            high,
+            low,
+            volume,
+            change_percent_1d,
+            market_cap,
+            pe,
+            pb,
+            roe,
+            eps,
+            dividend_yield,
+            rsi14,
+            ma5,
+            ma10,
+            ma20,
+            ma50,
+            avg_trading_value_20d,
+            updated_at
+        FROM stock.stock_screener
+        WHERE updated_at >= CURRENT_DATE - INTERVAL '7 days'
+        ORDER BY avg_trading_value_20d DESC NULLS LAST
         LIMIT 500;
         """
 
@@ -158,9 +174,11 @@ def screen_stocks_from_database(
                 data.append(record)
 
         if not data:
+            logger.warning("No data in stock_screener table")
             return pd.DataFrame()
 
         df = pd.DataFrame(data)
+        logger.info(f"Loaded {len(df)} stocks from database")
 
         # Apply filters
         filtered_df = apply_filters(df, conditions)
@@ -183,7 +201,7 @@ def screen_stocks_sync(
 ) -> pd.DataFrame:
     """
     Screen stocks based on given conditions (synchronous version)
-    Uses TCBS API with database fallback
+    Uses database as primary source (TCBS API is currently unavailable - 404 error)
 
     Args:
         conditions: Dictionary of column:condition pairs (e.g. {'roe': '>15', 'pe': '<15'})
@@ -194,31 +212,9 @@ def screen_stocks_sync(
     Returns:
         DataFrame of filtered stocks
     """
-    try:
-        # Try TCBS first
-        stock = Vnstock().stock(symbol='ACB', source='TCBS')
-        params = {"exchangeName": "HOSE,HNX,UPCOM"}
-        df = stock.screener.stock(params=params, limit=1700)
-
-        if df.empty:
-            logger.warning("No data from TCBS screener, trying database fallback")
-            # Fallback to database
-            return screen_stocks_from_database(conditions, sort_by, ascending, limit)
-
-        # Apply filters
-        filtered_df = apply_filters(df, conditions)
-
-        # Sort results
-        sorted_df = sort_results(filtered_df, sort_by, ascending)
-
-        # Return limited results
-        return sorted_df.head(limit)
-
-    except Exception as e:
-        logger.error(f"Error in screen_stocks_sync: {str(e)}")
-        # Try database fallback
-        logger.info("Attempting database fallback for screener")
-        return screen_stocks_from_database(conditions, sort_by, ascending, limit)
+    # Use database directly (TCBS screener API returns 404 as of Jan 2026)
+    logger.info("Using database for stock screening")
+    return screen_stocks_from_database(conditions, sort_by, ascending, limit)
 
 
 async def screen_stocks_mcp(

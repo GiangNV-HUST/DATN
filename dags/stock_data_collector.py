@@ -1,6 +1,16 @@
 """
 Airflow DAG - Thu thập dữ liệu cổ phiếu
 Scheduler: Chạy mỗi ngày vào lúc 15:30 chiều (sau khi thị trường đóng cửa)
+
+Data Flow:
+  VnStock API -> Kafka Producer -> Kafka Topic -> Enhanced Consumer -> Database
+
+Database Tables Updated:
+  - stock.stock_prices_1d (indicators)
+  - stock_screener (screening data)
+  - stock_1d (historical)
+  - stock.stock_prices_3d_predict
+  - stock.stock_prices_48d_predict
 """
 
 from airflow import DAG
@@ -8,11 +18,13 @@ from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 import sys
 import os
+import time
+import pandas as pd
 
 # Add src to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.data_collector.vnstock_client import VnStockClient
+from vnstock import Vnstock
 from src.kafka_producer.producer import StockDataProducer
 
 # ================================================================================
@@ -58,6 +70,143 @@ TICKERS_BATCH_4 = ["HPG", "GAS", "POW", "PLX", "PVD", "PVS", "PVT", "GEG", "NT2"
 TICKERS_BATCH_5 = ["FPT", "VGC", "GMD", "SHB", "EVF", "VCI", "VIX", "HCM", "CMG", "ITD"]
 
 # =============================================================================
+# Rate Limiting for VCI API
+# =============================================================================
+
+_last_api_call = 0
+_API_DELAY = 3  # seconds between API calls
+
+
+def rate_limit():
+    """Apply rate limiting for API calls"""
+    global _last_api_call
+    elapsed = time.time() - _last_api_call
+    if elapsed < _API_DELAY:
+        sleep_time = _API_DELAY - elapsed
+        time.sleep(sleep_time)
+    _last_api_call = time.time()
+
+
+def fetch_stock_data(ticker: str, days: int = 60) -> dict:
+    """
+    Fetch stock data from VnStock API with overview and fundamentals
+
+    Returns:
+        dict with keys: ticker, price_history, overview, fundamentals
+    """
+    rate_limit()
+
+    try:
+        stock = Vnstock().stock(symbol=ticker, source='VCI')
+
+        # Get price history
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+
+        price_df = stock.quote.history(
+            start=start_date.strftime('%Y-%m-%d'),
+            end=end_date.strftime('%Y-%m-%d'),
+            interval='1D'
+        )
+
+        if price_df is None or price_df.empty:
+            return None
+
+        # Rename columns to match expected format
+        price_df = price_df.rename(columns={
+            'Open': 'open',
+            'High': 'high',
+            'Low': 'low',
+            'Close': 'close',
+            'Volume': 'volume'
+        })
+
+        # Handle time column
+        if 'time' not in price_df.columns:
+            if 'TradingDate' in price_df.columns:
+                price_df['time'] = price_df['TradingDate']
+            elif price_df.index.name == 'time' or isinstance(price_df.index, pd.DatetimeIndex):
+                price_df = price_df.reset_index()
+                if 'index' in price_df.columns:
+                    price_df = price_df.rename(columns={'index': 'time'})
+
+        # Get company overview (exchange, industry)
+        # VnStock returns: icb_name3 for industry, symbol for ticker
+        overview = {}
+        try:
+            rate_limit()
+            overview_data = stock.company.overview()
+            if overview_data is not None and not overview_data.empty:
+                row = overview_data.iloc[0] if hasattr(overview_data, 'iloc') else {}
+                # icb_name3 is the industry classification
+                industry = row.get('icb_name3') or row.get('icb_name2') or row.get('industry')
+                # Exchange is determined by ticker prefix or listing info
+                overview = {
+                    'exchange': 'HOSE',  # Default, most stocks are on HOSE
+                    'industry': industry
+                }
+        except Exception:
+            pass
+
+        # Get fundamentals (PE, PB, ROE)
+        # VnStock returns MultiIndex columns: ('Category', 'Metric')
+        fundamentals = {}
+        try:
+            rate_limit()
+            ratio_data = stock.finance.ratio(period='quarter', lang='en')
+            if ratio_data is not None and not ratio_data.empty:
+                # Flatten MultiIndex columns if present
+                if isinstance(ratio_data.columns, pd.MultiIndex):
+                    # Create a mapping from metric name to value
+                    latest = ratio_data.iloc[-1]
+                    ratio_dict = {}
+                    for col in ratio_data.columns:
+                        if isinstance(col, tuple):
+                            metric_name = col[1]  # Get the metric name (second level)
+                            ratio_dict[metric_name] = latest[col]
+                        else:
+                            ratio_dict[col] = latest[col]
+                else:
+                    ratio_dict = ratio_data.iloc[-1].to_dict()
+
+                # Extract values using the actual column names from VnStock
+                pe_val = ratio_dict.get('P/E') or ratio_dict.get('PE')
+                pb_val = ratio_dict.get('P/B') or ratio_dict.get('PB')
+                roe_val = ratio_dict.get('ROE (%)') or ratio_dict.get('ROE')
+                eps_val = ratio_dict.get('EPS (VND)') or ratio_dict.get('EPS')
+                div_val = ratio_dict.get('Dividend yield (%)') or ratio_dict.get('Dividend Yield')
+
+                # Note: ROE from VnStock is in decimal form (0.1 = 10%), need to multiply by 100
+                fundamentals = {
+                    'pe': float(pe_val) if pe_val and not pd.isna(pe_val) else None,
+                    'pb': float(pb_val) if pb_val and not pd.isna(pb_val) else None,
+                    'roe': float(roe_val) * 100 if roe_val and not pd.isna(roe_val) else None,  # Convert to %
+                    'eps': float(eps_val) if eps_val and not pd.isna(eps_val) else None,
+                    'dividend_yield': float(div_val) if div_val and not pd.isna(div_val) else None
+                }
+        except Exception as e:
+            print(f"Error getting fundamentals for {ticker}: {e}")
+
+        # Convert timestamps to ISO format strings for JSON serialization
+        price_records = price_df.to_dict(orient='records')
+        for record in price_records:
+            if 'time' in record and hasattr(record['time'], 'isoformat'):
+                record['time'] = record['time'].isoformat()
+
+        return {
+            'ticker': ticker,
+            'price_history': price_records,
+            'overview': overview,
+            'fundamentals': fundamentals,
+            'fetched_at': datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        print(f"Error fetching {ticker}: {e}")
+        return None
+
+
+# =============================================================================
 # Task function
 # =============================================================================
 
@@ -66,16 +215,26 @@ def crawl_and_produce_batch(tickers, batch_name):
     """
     Crawl data và gửi vào kafka cho một batch
 
-    Args:
-        tickers: List các mã cổ phiếu
-        batch_name: Tên batch (để logging)
+    Data format sent to Kafka:
+        {
+            'ticker': str,
+            'price_history': list[dict],  # OHLCV data
+            'overview': {'exchange': str, 'industry': str},
+            'fundamentals': {'pe': float, 'pb': float, 'roe': float, ...},
+            'fetched_at': str
+        }
+
+    Enhanced Consumer will:
+        - Calculate technical indicators (RSI, MA, MACD, BB)
+        - Detect alerts
+        - Generate predictions (3d & 48d)
+        - Save to: stock_prices_1d, stock_screener, stock_1d, predictions tables
     """
     print(f"{'='*60}")
     print(f"Processing batch: {batch_name}")
     print(f"Tickers: {tickers}")
     print(f"{'='* 60}")
 
-    client = VnStockClient()
     producer = StockDataProducer()
 
     success_count = 0
@@ -84,18 +243,19 @@ def crawl_and_produce_batch(tickers, batch_name):
         try:
             print(f"📊 Crawling {ticker}...")
 
-            # Crawl data
-            df = client.get_daily_data(ticker)
+            # Fetch data with new format (includes overview & fundamentals)
+            data = fetch_stock_data(ticker, days=60)
 
-            if df is None or df.empty:
+            if data is None:
                 print(f"⚠️ No data for {ticker}")
                 failed_count += 1
                 continue
-            # Gửi vào kafka
-            success = producer.send_stock_data(ticker, df)
+
+            # Gửi vào kafka với format mới
+            success = producer.send_stock_data(ticker, data)
 
             if success:
-                print(f"✅ {ticker} sent successfully")
+                print(f"✅ {ticker} sent ({len(data['price_history'])} records)")
                 success_count += 1
             else:
                 print(f"❌ Failed to send {ticker}")

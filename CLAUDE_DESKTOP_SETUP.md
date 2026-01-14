@@ -11,21 +11,23 @@ Claude Desktop
     ↓ (MCP Protocol)
 Orchestrator MCP Server (orchestrator_server.py)
     ↓
-MainOrchestrator (main_orchestrator.py)
+MultiAgentOrchestrator (multi_agent_orchestrator.py)
     ↓
-AI Router (quyết định AUTO/AGENT/DIRECT mode)
+SpecialistRouter (AI-powered routing với GPT-4o-mini)
     ↓
-┌─────────────────────────────────────┐
-│  AGENT MODE (Phức tạp)              │  DIRECT MODE (Nhanh)
-│  ├─ AnalysisSpecialist              │  ├─ Pattern matching
-│  ├─ ScreenerSpecialist              │  ├─ Extract parameters
-│  ├─ AlertManager                    │  └─ Direct tool call (<1s)
-│  ├─ InvestmentPlanner               │
-│  ├─ DiscoverySpecialist             │
-│  └─ SubscriptionManager             │
-└─────────────────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│  8 SPECIALIZED AGENTS                           │
+│  ├─ AnalysisSpecialist     (Phân tích cổ phiếu) │
+│  ├─ ScreenerSpecialist     (Lọc cổ phiếu)       │
+│  ├─ AlertManager           (Quản lý cảnh báo)   │
+│  ├─ InvestmentPlanner      (Tư vấn đầu tư)      │
+│  ├─ DiscoverySpecialist    (Khám phá cổ phiếu)  │
+│  ├─ SubscriptionManager    (Quản lý watchlist)  │
+│  ├─ MarketContextSpecialist(Tổng quan thị trường)│
+│  └─ ComparisonSpecialist   (So sánh cổ phiếu)   │
+└─────────────────────────────────────────────────┘
     ↓
-25 MCP Tools (stock data, predictions, alerts, etc.)
+31 MCP Tools (stock data, predictions, alerts, etc.)
 ```
 
 ## Cài Đặt
@@ -263,15 +265,14 @@ process_query({
 ```
 
 **Hệ thống xử lý:**
-1. AI Router phân tích query → Complexity: 0.7 → Chọn AGENT mode
-2. Route đến **AnalysisSpecialist**
-3. AnalysisSpecialist thực hiện:
+1. SpecialistRouter phân tích query → Route đến **AnalysisSpecialist**
+2. AnalysisSpecialist thực hiện:
    - Lấy dữ liệu giá: `get_stock_data(symbols=["VCB"])`
    - Lấy chi tiết từ TCBS: `get_stock_details_from_tcbs(symbols=["VCB"])`
    - Lấy dữ liệu tài chính: `get_financial_data(tickers=["VCB"])`
    - Tạo biểu đồ: `generate_chart_from_data(symbols=["VCB"])`
    - Tóm tắt bằng AI: `gemini_summarize(...)`
-4. Trả về kết quả phân tích đầy đủ
+3. Trả về kết quả phân tích đầy đủ
 
 #### Ví Dụ 2: Truy Vấn Giá (DIRECT Mode)
 
@@ -287,11 +288,9 @@ process_query({
 ```
 
 **Hệ thống xử lý:**
-1. AI Router → Complexity: 0.1 → Chọn DIRECT mode
-2. Pattern matching: "giá {symbol} hiện tại"
-3. Extract symbol: "VCB"
-4. Direct call: `get_stock_data(symbols=["VCB"], lookback_days=1)`
-5. Trả về ngay (<1 giây)
+1. SpecialistRouter → Route đến **AnalysisSpecialist** (simple price query)
+2. AnalysisSpecialist gọi: `get_stock_data(symbols=["VCB"])`
+3. Trả về kết quả nhanh
 
 #### Ví Dụ 3: Tư Vấn Đầu Tư (Multi-Step Workflow)
 
@@ -306,46 +305,30 @@ process_query({
 })
 ```
 
-**Hệ thống xử lý (Multi-Agent Workflow):**
-
-```
-Step 1: InvestmentPlanner.gather_investment_profile()
-  → Xác định: capital=50M, risk=moderate, sector=banking
-
-Step 2: ScreenerSpecialist.screen_stocks()
-  → Lọc cổ phiếu ngành ngân hàng
-  → Kết quả: VCB, CTG, TCB, MBB, VPB
-
-Step 3: AnalysisSpecialist.analyze_stocks()
-  → Phân tích từng cổ phiếu
-  → Đánh giá tài chính, kỹ thuật
-
-Step 4: InvestmentPlanner.calculate_portfolio_allocation()
-  → Phân bổ vốn: VCB 40%, CTG 30%, TCB 30%
-
-Step 5: InvestmentPlanner.generate_entry_strategy()
-  → Điểm vào, giá mục tiêu
-
-Step 6: InvestmentPlanner.generate_risk_management_plan()
-  → Stop-loss, take-profit
-
-Step 7: InvestmentPlanner.generate_monitoring_plan()
-  → Các chỉ số cần theo dõi
-```
+**Hệ thống xử lý:**
+1. SpecialistRouter → Route đến **InvestmentPlanner**
+2. InvestmentPlanner thực hiện workflow đầy đủ:
+   - Xác định: capital=50M, risk=moderate, sector=banking
+   - Lọc cổ phiếu ngành ngân hàng phù hợp
+   - Phân bổ vốn theo risk profile
+   - Tạo chiến lược đầu tư
 
 **Response:** Báo cáo đầu tư đầy đủ với phân bổ vốn, chiến lược, quản lý rủi ro.
 
 ### Routing Logic
 
-Hệ thống tự động quyết định giữa AGENT mode và DIRECT mode:
+SpecialistRouter sử dụng GPT-4o-mini để route query đến agent phù hợp:
 
-| Query Type | Complexity | Mode | Thời Gian | Ví Dụ |
-|------------|-----------|------|-----------|-------|
-| Giá đơn giản | 0.0-0.3 | DIRECT | <1s | "Giá VCB" |
-| Tạo alert | 0.1-0.3 | DIRECT | <1s | "Tạo cảnh báo VCB > 90" |
-| Phân tích cơ bản | 0.4-0.6 | AGENT | 2-5s | "Phân tích VCB" |
-| Lọc cổ phiếu | 0.5-0.7 | AGENT | 3-7s | "Tìm cổ phiếu ROE > 15%" |
-| Tư vấn đầu tư | 0.7-1.0 | AGENT | 5-15s | "Tư vấn đầu tư 50 triệu" |
+| Query Type | Agent | Ví Dụ |
+|------------|-------|-------|
+| Giá, phân tích | AnalysisSpecialist | "Giá VCB", "Phân tích VCB" |
+| Lọc cổ phiếu | ScreenerSpecialist | "Tìm cổ phiếu ROE > 15%" |
+| Tư vấn đầu tư | InvestmentPlanner | "Tư vấn đầu tư 50 triệu" |
+| Khám phá | DiscoverySpecialist | "Cổ phiếu tiềm năng ngành công nghệ" |
+| Cảnh báo | AlertManager | "Tạo cảnh báo VCB > 90" |
+| Watchlist | SubscriptionManager | "Theo dõi HPG" |
+| Thị trường | MarketContextSpecialist | "Tình hình thị trường hôm nay" |
+| So sánh | ComparisonSpecialist | "So sánh VCB với TCB" |
 
 ## Troubleshooting
 
@@ -442,51 +425,51 @@ Hệ thống tự động quyết định giữa AGENT mode và DIRECT mode:
                               │
                               ▼
          ┌────────────────────────────────┐
-         │   MainOrchestrator             │
-         │   (main_orchestrator.py)       │
-         │                                │
-         │   Modes: AUTO/AGENT/DIRECT     │
+         │   MultiAgentOrchestrator       │
+         │   (multi_agent_orchestrator.py)│
          └───────────┬────────────────────┘
                      │
          ┌───────────▼───────────┐
-         │     AI Router         │
-         │   (ai_router.py)      │
+         │   SpecialistRouter    │
+         │ (specialist_router.py)│
          │                       │
-         │ Analyze complexity:   │
-         │ 0.0-0.3 → DIRECT      │
-         │ 0.3+    → AGENT       │
-         └───┬──────────────┬────┘
-             │              │
-    ┌────────▼───┐    ┌────▼─────────────┐
-    │   DIRECT   │    │     AGENT        │
-    │   MODE     │    │     MODE         │
-    │            │    │                  │
-    │ Pattern    │    │ OrchestratorAgent│
-    │ Matching   │    │ (orchestrator_   │
-    │            │    │  agent.py)       │
-    │ <1 second  │    │                  │
-    └────────────┘    │ Delegates to:    │
-                      │ - AnalysisSpec   │
-                      │ - ScreenerSpec   │
-                      │ - AlertManager   │
-                      │ - InvestPlanner  │
-                      │ - DiscoverySpec  │
-                      │ - SubscManager   │
-                      └──────────────────┘
-                             │
-                             ▼
-                   ┌──────────────────┐
-                   │   25 MCP Tools   │
-                   │                  │
-                   │ Stock Data       │
-                   │ Predictions      │
-                   │ Charts           │
-                   │ Alerts           │
-                   │ Subscriptions    │
-                   │ AI Summaries     │
-                   │ Screening        │
-                   │ etc.             │
-                   └──────────────────┘
+         │ AI-powered routing    │
+         │ using GPT-4o-mini     │
+         └───────────┬───────────┘
+                     │
+    ┌────────────────┼────────────────┐
+    │                │                │
+    ▼                ▼                ▼
+┌──────────┐  ┌──────────┐  ┌──────────────────┐
+│Analysis  │  │Screener  │  │ Market Context   │
+│Specialist│  │Specialist│  │ Specialist       │
+└──────────┘  └──────────┘  └──────────────────┘
+    │                │                │
+    ▼                ▼                ▼
+┌──────────┐  ┌──────────┐  ┌──────────────────┐
+│Investment│  │Discovery │  │  Comparison      │
+│ Planner  │  │Specialist│  │  Specialist      │
+└──────────┘  └──────────┘  └──────────────────┘
+    │                │                │
+    ▼                ▼                ▼
+┌──────────┐  ┌──────────────────────────────┐
+│  Alert   │  │    Subscription Manager      │
+│ Manager  │  └──────────────────────────────┘
+└──────────┘
+         │
+         ▼
+┌──────────────────┐
+│   31 MCP Tools   │
+│                  │
+│ Stock Data       │
+│ Predictions      │
+│ Charts           │
+│ Alerts           │
+│ Subscriptions    │
+│ AI Summaries     │
+│ Screening        │
+│ etc.             │
+└──────────────────┘
 ```
 
 ### State Management
@@ -558,6 +541,13 @@ Nếu gặp vấn đề, kiểm tra:
 4. Dependencies: `pip list`
 
 ## Changelog
+
+- **v2.0** (2026-01-13): Upgraded to Multi-Agent Architecture
+  - 8 Specialized Agents (thêm MarketContextSpecialist, ComparisonSpecialist)
+  - SpecialistRouter với GPT-4o-mini (97.3% routing accuracy)
+  - Removed DIRECT mode, all queries go through specialized agents
+  - 31 MCP tools
+  - Simplified architecture
 
 - **v1.0** (2026-01-09): Initial release với orchestrator MCP wrapper
   - Support cho full multi-agent system

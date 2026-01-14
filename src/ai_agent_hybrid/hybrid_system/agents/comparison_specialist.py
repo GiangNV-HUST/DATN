@@ -117,7 +117,8 @@ Hay so sanh chi tiet, khach quan va dua ra khuyen nghi ro rang!
     async def compare_stocks(
         self,
         symbols: List[str],
-        comparison_type: str = "full"  # full, price, fundamental, technical
+        comparison_type: str = "full",  # full, price, fundamental, technical
+        cached_details: Optional[Dict] = None  # Reuse cached stock details
     ) -> Dict:
         """
         Compare multiple stocks
@@ -125,6 +126,7 @@ Hay so sanh chi tiet, khach quan va dua ra khuyen nghi ro rang!
         Args:
             symbols: List of stock symbols to compare
             comparison_type: Type of comparison
+            cached_details: Optional cached result from get_stock_details_from_tcbs
 
         Returns:
             Dict with comparison data
@@ -136,11 +138,14 @@ Hay so sanh chi tiet, khach quan va dua ra khuyen nghi ro rang!
                 "data": {}
             }
 
-            # Get detailed data for all symbols
-            details_result = await self.mcp_client.call_tool(
-                "get_stock_details_from_tcbs",
-                {"symbols": symbols}
-            )
+            # Use cached details or fetch new
+            if cached_details and cached_details.get("status") == "success":
+                details_result = cached_details
+            else:
+                details_result = await self.mcp_client.call_tool(
+                    "get_stock_details_from_tcbs",
+                    {"symbols": symbols}
+                )
 
             if details_result.get("status") == "success":
                 stocks_data = details_result.get("data", [])
@@ -150,6 +155,9 @@ Hay so sanh chi tiet, khach quan va dua ra khuyen nghi ro rang!
                     ticker = stock.get("ticker")
                     if ticker:
                         comparison_data["data"][ticker] = stock
+
+            # Store raw details for potential reuse
+            comparison_data["_cached_details"] = details_result
 
             # Get price data for performance comparison
             if comparison_type in ["full", "price", "technical"]:
@@ -171,7 +179,7 @@ Hay so sanh chi tiet, khach quan va dua ra khuyen nghi ro rang!
                         "tickers": symbols,
                         "is_income_statement": True,
                         "is_balance_sheet": True,
-                        "is_ratio": True
+                        "is_financial_ratios": True
                     }
                 )
 
@@ -242,21 +250,30 @@ Hay so sanh chi tiet, khach quan va dua ra khuyen nghi ro rang!
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
-    async def calculate_relative_metrics(self, symbols: List[str]) -> Dict:
+    async def calculate_relative_metrics(
+        self,
+        symbols: List[str],
+        cached_details: Optional[Dict] = None
+    ) -> Dict:
         """
         Calculate relative valuation metrics for comparison
 
         Args:
             symbols: List of stock symbols
+            cached_details: Optional cached result from get_stock_details_from_tcbs
 
         Returns:
             Dict with relative metrics
         """
         try:
-            details_result = await self.mcp_client.call_tool(
-                "get_stock_details_from_tcbs",
-                {"symbols": symbols}
-            )
+            # Use cached details or fetch new
+            if cached_details and cached_details.get("status") == "success":
+                details_result = cached_details
+            else:
+                details_result = await self.mcp_client.call_tool(
+                    "get_stock_details_from_tcbs",
+                    {"symbols": symbols}
+                )
 
             if details_result.get("status") != "success":
                 return {"status": "error", "message": "Cannot fetch stock details"}
@@ -346,9 +363,12 @@ Hay so sanh chi tiet, khach quan va dua ra khuyen nghi ro rang!
             self.stats["multi_stock_comparisons"] += 1
 
         try:
-            # Get comparison data
+            # Get comparison data (this also caches stock details)
             comparison_result = await self.compare_stocks(symbols, comparison_type)
-            relative_metrics = await self.calculate_relative_metrics(symbols)
+
+            # Reuse cached details for relative metrics (avoids redundant API call)
+            cached_details = comparison_result.get("comparison", {}).get("_cached_details")
+            relative_metrics = await self.calculate_relative_metrics(symbols, cached_details)
 
             # Store in shared state if provided
             if shared_state is not None:
@@ -422,9 +442,12 @@ Hay so sanh chi tiet theo format:
             peer_symbols = [p.get("ticker") for p in peer_result.get("peers", [])]
             all_symbols = [symbol] + peer_symbols
 
-            # Compare with peers
+            # Compare with peers (this caches stock details)
             comparison_result = await self.compare_stocks(all_symbols, "fundamental")
-            relative_metrics = await self.calculate_relative_metrics(all_symbols)
+
+            # Reuse cached details for relative metrics (avoids redundant API call)
+            cached_details = comparison_result.get("comparison", {}).get("_cached_details")
+            relative_metrics = await self.calculate_relative_metrics(all_symbols, cached_details)
 
             # Store in shared state
             if shared_state is not None:

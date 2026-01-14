@@ -2,10 +2,10 @@
 Financial data tools for MCP server
 Provides access to balance sheet, income statement, cash flow, and financial ratios
 
-Strategy:
-- API (VCI) is the PRIMARY source for financial data
-- Database is used as CACHE/FALLBACK when API fails
-- Financial data updates quarterly, so caching is efficient
+Strategy: DATABASE FIRST (instant) -> VCI API fallback
+- Database is the PRIMARY source (instant response, ~50ms)
+- API is used as FALLBACK when DB has no data
+- Financial data updates quarterly, so DB cache is highly effective
 """
 import asyncio
 import datetime
@@ -14,6 +14,15 @@ from typing import Optional, List, Dict, Tuple
 from decimal import Decimal
 
 logger = logging.getLogger(__name__)
+
+# Suppress vnstock logging to prevent "I/O operation on closed file" errors in thread pools
+for _vn_logger_name in ['vnstock', 'vnstock.explorer', 'vnstock.common', 'vnstock.core',
+                         'vnai', 'vnstock.explorer.vci', 'vnstock.explorer.tcbs', 'vnstock.quote']:
+    _vn_logger = logging.getLogger(_vn_logger_name)
+    _vn_logger.setLevel(logging.CRITICAL)
+    _vn_logger.propagate = False
+    if not _vn_logger.handlers:
+        _vn_logger.addHandler(logging.NullHandler())
 
 
 def serialize_val(val):
@@ -27,7 +36,7 @@ def serialize_val(val):
 
 async def _fetch_from_api(ticker: str, data_type: str, period: str, num_periods: int) -> Dict:
     """
-    Fetch financial data from VCI API (PRIMARY SOURCE)
+    Fetch financial data from VCI API (FALLBACK SOURCE)
 
     Args:
         ticker: Stock symbol
@@ -94,7 +103,7 @@ async def _fetch_from_api(ticker: str, data_type: str, period: str, num_periods:
 
 async def _fetch_from_database(ticker: str, data_type: str, period: str, num_periods: int) -> Dict:
     """
-    Fetch financial data from Database (FALLBACK SOURCE)
+    Fetch financial data from Database (PRIMARY SOURCE - instant response)
 
     Args:
         ticker: Stock symbol
@@ -114,7 +123,7 @@ async def _fetch_from_database(ticker: str, data_type: str, period: str, num_per
                 'balance_sheet': 'stock.balance_sheet',
                 'income_statement': 'stock.income_statement',
                 'cash_flow': 'stock.cash_flow',
-                'ratio': 'stock.ratio'
+                'ratio': 'stock.financial_ratios'
             }
 
             table_name = table_map.get(data_type)
@@ -169,7 +178,7 @@ async def _get_financial_data_for_ticker(
 ) -> Dict:
     """
     Get financial data for a single ticker
-    Strategy: Try API first, fallback to Database
+    Strategy: DATABASE first (instant) -> API fallback
 
     Args:
         ticker: Stock symbol
@@ -180,29 +189,29 @@ async def _get_financial_data_for_ticker(
     Returns:
         Dict with financial data
     """
-    # Try API first (PRIMARY)
-    api_result = await _fetch_from_api(ticker, data_type, period, num_periods)
-
-    if api_result.get("status") == "success":
-        logger.info(f"Got {data_type} for {ticker} from API")
-        return api_result
-
-    # Fallback to Database
-    logger.info(f"API failed for {ticker}/{data_type}, trying database fallback")
+    # Try DATABASE first (PRIMARY - instant response)
     db_result = await _fetch_from_database(ticker, data_type, period, num_periods)
 
     if db_result.get("status") == "success":
-        logger.info(f"Got {data_type} for {ticker} from Database (fallback)")
+        logger.info(f"[DB-first] Got {data_type} for {ticker} from Database (instant)")
         return db_result
+
+    # Fallback to API (slower but has latest data)
+    logger.info(f"[DB-first] No DB data for {ticker}/{data_type}, falling back to API")
+    api_result = await _fetch_from_api(ticker, data_type, period, num_periods)
+
+    if api_result.get("status") == "success":
+        logger.info(f"[DB-first] Got {data_type} for {ticker} from API (fallback)")
+        return api_result
 
     # Both failed
     return {
         "status": "error",
         "ticker": ticker.upper(),
         "data_type": data_type,
-        "message": f"Failed to fetch {data_type} from both API and Database",
-        "api_error": api_result.get("message"),
-        "db_error": db_result.get("message")
+        "message": f"Failed to fetch {data_type} from both Database and API",
+        "db_error": db_result.get("message"),
+        "api_error": api_result.get("message")
     }
 
 
@@ -218,9 +227,9 @@ async def get_financial_data_mcp(
     """
     Get financial data for multiple tickers
 
-    Data Source Strategy:
-    1. PRIMARY: VCI API (always has latest data)
-    2. FALLBACK: Database (cached data from previous crawls)
+    Data Source Strategy: DATABASE FIRST (instant) -> API fallback
+    1. PRIMARY: Database (instant response ~50ms)
+    2. FALLBACK: VCI API (when DB has no data, ~7s per call)
 
     Args:
         tickers: List of stock symbols

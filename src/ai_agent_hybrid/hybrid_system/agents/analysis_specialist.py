@@ -122,22 +122,33 @@ Hay phan tich chuyen nghiep va dua ra insights co gia tri!
     def _wrap_tool(self, tool_name: str):
         """Wrap MCP tool for use with OpenAI"""
         async def wrapped(**kwargs):
-            result = await self.mcp_client.call_tool(tool_name, kwargs)
-            return result
+            # Check if tool exists before calling to avoid async exception warnings
+            if hasattr(self.mcp_client, 'has_tool') and not self.mcp_client.has_tool(tool_name):
+                return {"status": "skipped", "message": f"Tool {tool_name} not available"}
+
+            try:
+                result = await self.mcp_client.call_tool(tool_name, kwargs)
+                return result
+            except ValueError as e:
+                # Tool not available in DirectMCPClient
+                return {"status": "skipped", "message": f"Tool {tool_name} not available"}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
         return wrapped
 
     async def analyze(
         self,
-        symbols: List[str],
-        user_query: str,
+        symbols: List[str] = None,
+        user_query: str = "",
         shared_state: Optional[Dict] = None,
-        analysis_type: str = "auto"  # auto, price, fundamental, full
+        analysis_type: str = "auto",  # auto, price, fundamental, full
+        previous_context: str = ""  # Context from previous agent (e.g., screener results)
     ) -> AsyncIterator[str]:
         """
         Perform stock analysis
 
         Args:
-            symbols: List of stock symbols
+            symbols: List of stock symbols (can be None if extracted from previous_context)
             user_query: User's analysis request
             shared_state: Shared state for storing intermediate results
             analysis_type: Type of analysis (auto/price/fundamental/full)
@@ -146,6 +157,15 @@ Hay phan tich chuyen nghiep va dua ra insights co gia tri!
             Analysis chunks as they're generated
         """
         self.stats["total_analyses"] += 1
+
+        # Extract symbols from previous_context if not provided
+        if not symbols and previous_context:
+            symbols = self._extract_symbols_from_context(previous_context)
+
+        # Default to empty list if still no symbols
+        if not symbols:
+            yield "[ERROR] Khong tim thay ma co phieu de phan tich. Vui long cung cap ma co phieu."
+            return
 
         # Determine analysis type if auto
         if analysis_type == "auto":
@@ -160,10 +180,14 @@ Hay phan tich chuyen nghiep va dua ra insights co gia tri!
             self.stats["full_analyses"] += 1
 
         try:
+            # Check if user wants a chart
+            needs_chart = self._needs_chart(user_query)
+            lookback_days = self._extract_lookback_days(user_query)
+
             # Step 1: Get stock data
             stock_data = await self.mcp_client.call_tool(
                 "get_stock_data",
-                {"symbols": symbols, "lookback_days": 30}
+                {"symbols": symbols, "lookback_days": lookback_days}
             )
 
             if shared_state is not None:
@@ -172,8 +196,21 @@ Hay phan tich chuyen nghiep va dua ra insights co gia tri!
 
             financial_data = None
             prediction = None
+            chart_result = None
 
-            # Step 2: Get financial data if needed
+            # Step 2: Generate chart if requested
+            if needs_chart:
+                try:
+                    chart_result = await self.mcp_client.call_tool(
+                        "generate_chart_from_data",
+                        {"symbols": symbols, "lookback_days": lookback_days}
+                    )
+                    if shared_state is not None:
+                        shared_state["chart_result"] = chart_result
+                except Exception as chart_error:
+                    chart_result = {"status": "error", "message": str(chart_error)}
+
+            # Step 3: Get financial data if needed
             if analysis_type in ["fundamental", "full"]:
                 financial_data = await self.mcp_client.call_tool(
                     "get_financial_data",
@@ -181,7 +218,7 @@ Hay phan tich chuyen nghiep va dua ra insights co gia tri!
                         "tickers": symbols,
                         "is_income_statement": True,
                         "is_balance_sheet": True,
-                        "is_ratio": True
+                        "is_financial_ratios": True
                     }
                 )
 
@@ -189,7 +226,7 @@ Hay phan tich chuyen nghiep va dua ra insights co gia tri!
                     for symbol in symbols:
                         shared_state[f"financial_data_{symbol}"] = financial_data.get("results", {}).get(symbol)
 
-            # Step 3: Get price prediction
+            # Step 4: Get price prediction
             if analysis_type in ["price", "full"]:
                 prediction = await self.mcp_client.call_tool(
                     "get_stock_price_prediction",
@@ -200,28 +237,22 @@ Hay phan tich chuyen nghiep va dua ra insights co gia tri!
                     for symbol in symbols:
                         shared_state[f"prediction_{symbol}"] = prediction.get("results", {}).get(symbol)
 
-            # Step 4: Search for news (skip if tool not available)
-            news_results = {"status": "skipped", "message": "News search not available"}
-            try:
-                news_results = await self.mcp_client.call_tool(
-                    "gemini_search_and_summarize",
-                    {
-                        "query": f"{' '.join(symbols)} tin tuc moi nhat",
-                        "use_search": True
-                    }
-                )
-            except (ValueError, Exception):
-                # Tool not available in DirectMCPClient, skip news search
-                pass
+            # Step 5: Search for news (skip if tool not available)
+            # Use wrapped tool to gracefully handle missing tool
+            news_results = await self.tools["gemini_search_and_summarize"](
+                query=f"{' '.join(symbols)} tin tuc moi nhat",
+                use_search=True
+            )
 
-            # Step 5: Generate comprehensive analysis with OpenAI
+            # Step 6: Generate comprehensive analysis with OpenAI
             analysis_prompt = self._build_final_analysis_prompt(
                 symbols,
                 user_query,
                 stock_data,
                 financial_data if analysis_type in ["fundamental", "full"] else None,
                 prediction if analysis_type in ["price", "full"] else None,
-                news_results
+                news_results,
+                chart_result
             )
 
             response = self.client.chat.completions.create(
@@ -237,6 +268,15 @@ Hay phan tich chuyen nghiep va dua ra insights co gia tri!
             # Yield response
             yield response.choices[0].message.content
 
+            # If chart was generated, yield chart info separately
+            if chart_result and chart_result.get("status") == "success":
+                html_paths = chart_result.get("html_paths", {})
+                if html_paths:
+                    chart_info = "\n\n📊 **Biểu đồ đã được tạo và mở trong trình duyệt:**\n"
+                    for symbol, path in html_paths.items():
+                        chart_info += f"- {symbol}: {path}\n"
+                    yield chart_info
+
         except Exception as e:
             yield f"[ERROR] Loi khi phan tich: {str(e)}"
 
@@ -250,6 +290,82 @@ Hay phan tich chuyen nghiep va dua ra insights co gia tri!
             return "full"
         else:
             return "price"
+
+    def _needs_chart(self, user_query: str) -> bool:
+        """Check if user wants a chart"""
+        query_lower = user_query.lower()
+        chart_keywords = [
+            "bieu do", "biểu đồ", "chart", "ve", "vẽ", "nen", "nến",
+            "candlestick", "graph", "do thi", "đồ thị"
+        ]
+        return any(kw in query_lower for kw in chart_keywords)
+
+    def _extract_lookback_days(self, user_query: str) -> int:
+        """Extract number of days from query"""
+        import re
+        query_lower = user_query.lower()
+
+        # Find patterns like "30 ngày", "30 phien", "30 days", "30d"
+        patterns = [
+            r'(\d+)\s*(?:ngay|ngày|phien|phiên|days?|d\b)',
+            r'(\d+)\s*(?:tuan|tuần|weeks?|w\b)',
+            r'(\d+)\s*(?:thang|tháng|months?|m\b)',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, query_lower)
+            if match:
+                num = int(match.group(1))
+                if 'tuan' in pattern or 'week' in pattern:
+                    return num * 7
+                elif 'thang' in pattern or 'month' in pattern:
+                    return num * 30
+                return num
+
+        return 30  # Default 30 days
+
+    def _extract_symbols_from_context(self, context: str) -> List[str]:
+        """
+        Extract stock symbols from previous context (e.g., screener results)
+
+        Args:
+            context: Text from previous agent's output
+
+        Returns:
+            List of extracted stock symbols
+        """
+        import re
+
+        # Common Vietnamese stock symbols
+        common_symbols = {
+            "VCB", "FPT", "HPG", "VIC", "VNM", "ACB", "MSN", "TCB", "VHM", "VPB",
+            "MBB", "BID", "CTG", "STB", "HDB", "SSI", "VND", "HCM", "GAS", "PNJ",
+            "MWG", "REE", "DPM", "PVD", "PLX", "PVS", "GVR", "POW", "VJC", "HVN",
+            "SHB", "TPB", "LPB", "OCB", "VIB", "MSB", "KBC", "DXG", "NVL", "PDR"
+        }
+
+        # Words to exclude (Vietnamese words that look like symbols)
+        exclude = {
+            "KHI", "NEN", "CAI", "NAO", "XEM", "MUA", "BAN", "GIA", "HON", "TOT",
+            "HAY", "ROI", "SAU", "CHO", "VAN", "THE", "NAY", "TAO", "TEN", "MOT",
+            "HAI", "BAO", "VON", "LOC", "TOP", "HOT", "TAT", "MAT", "DAU", "TRI",
+            "DCA", "VOI", "MOI", "LAP", "KHO", "TUY", "TAN", "DEN", "SAN", "CAN",
+            "CHI", "GOI", "THI", "TUC", "VAY", "COT", "CAO", "KEO", "DUA", "NUA"
+        }
+
+        # Find all 3-4 letter uppercase words
+        matches = re.findall(r'\b([A-Z]{3,4})\b', context.upper())
+
+        symbols = []
+        for match in matches:
+            if match in exclude:
+                continue
+            if match in common_symbols or len(match) == 3:
+                if match not in symbols:
+                    symbols.append(match)
+
+        # Limit to top 5 for analysis
+        return symbols[:5]
 
     def _build_analysis_prompt(
         self,
@@ -275,7 +391,8 @@ Su dung cac tools co san de thu thap du lieu va phan tich.
         stock_data: Dict,
         financial_data: Optional[Dict],
         prediction: Optional[Dict],
-        news: Dict
+        news: Dict,
+        chart_result: Optional[Dict] = None
     ) -> str:
         """Build final analysis prompt with all data"""
         prompt_parts = [
@@ -296,6 +413,11 @@ Su dung cac tools co san de thu thap du lieu va phan tich.
         # Add news
         prompt_parts.append(f"**Tin tuc:** {news}\n")
 
+        # Add chart info if available
+        if chart_result and chart_result.get("status") == "success":
+            prompt_parts.append(f"\n**Bieu do da duoc tao:** {chart_result.get('html_paths', {})}\n")
+            prompt_parts.append("(Bieu do nen da duoc mo trong trinh duyet)\n")
+
         # Add user query
         prompt_parts.append(f"\n**Yeu cau cua user:** {user_query}\n")
 
@@ -306,6 +428,8 @@ Hay tong hop va phan tich theo format:
 3. Phan tich co ban (neu co)
 4. Tin tuc va sentiment
 5. Khuyen nghi ro rang (MUA/BAN/NAM GIU)
+
+Neu user yeu cau bieu do, hay xac nhan rang bieu do da duoc tao va mo trong trinh duyet.
 """)
 
         return "".join(prompt_parts)

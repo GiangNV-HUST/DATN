@@ -48,10 +48,9 @@ from dotenv import load_dotenv
 env_path = project_root / ".env"
 if env_path.exists():
     load_dotenv(env_path)
-    # Restore temporarily to log
-    sys.stdout = _original_stdout
-    print(f"[OK] Loaded .env from {env_path}")
-    sys.stdout = io.StringIO()
+    # Log to stderr (NOT stdout - stdout is reserved for MCP JSON protocol)
+    # Use _original_stderr since sys.stderr is currently suppressed
+    print(f"[OK] Loaded .env from {env_path}", file=_original_stderr)
 pythonpath_env = os.environ.get('PYTHONPATH', '')
 if pythonpath_env and pythonpath_env not in sys.path:
     sys.path.insert(0, pythonpath_env)
@@ -86,7 +85,7 @@ logger = logging.getLogger(__name__)
 # Create MCP server instance
 app = Server("stock-market-orchestrator-server")
 
-# Global orchestrator instance - NOW USES MultiAgentOrchestrator with 6 Specialists
+# Global orchestrator instance - NOW USES MultiAgentOrchestrator with 8 Specialists
 orchestrator: Optional[MultiAgentOrchestrator] = None
 
 
@@ -94,7 +93,7 @@ async def get_orchestrator() -> MultiAgentOrchestrator:
     """Get or create the Multi-Agent orchestrator instance"""
     global orchestrator
     if orchestrator is None:
-        logger.info("Initializing MultiAgentOrchestrator with 6 Specialists...")
+        logger.info("Initializing MultiAgentOrchestrator with 8 Specialists...")
 
         # Path to the actual MCP server with all stock tools
         mcp_server_path = os.path.join(
@@ -110,7 +109,7 @@ async def get_orchestrator() -> MultiAgentOrchestrator:
             use_direct_client=True  # Use in-process client, not subprocess
         )
         await orchestrator.initialize()
-        logger.info(f"MultiAgentOrchestrator initialized with {len(orchestrator.specialists)} specialists!")
+        logger.info(f"MultiAgentOrchestrator initialized with 8 specialists!")
     return orchestrator
 
 
@@ -211,6 +210,8 @@ SPECIALIZED AGENTS (auto-selected based on query):
 - DiscoverySpecialist: Find stocks matching investment profile
 - AlertManager: Price alerts and notifications
 - SubscriptionManager: Stock watchlist management
+- MarketContextSpecialist: Market overview (VN-Index, sectors, breadth)
+- ComparisonSpecialist: Stock comparison (side-by-side, peer analysis)
 
 MODES:
 - auto (default): AI decides between agent/direct - RECOMMENDED
@@ -390,10 +391,8 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent | ImageConten
                 "architecture": {
                     "type": "multi-agent",
                     "components": [
-                        "AI Router (complexity analysis)",
-                        "OrchestratorAgent (reasoning)",
-                        "DirectExecutor (fast path)",
-                        "6 Specialized Agents",
+                        "SpecialistRouter (AI-powered routing)",
+                        "8 Specialized Agents",
                         "31 MCP Tools"
                     ],
                     "supported_channels": ["Claude Desktop", "Discord", "Web UI"]
@@ -487,7 +486,7 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent | ImageConten
             return [TextContent(type="text", text=json.dumps({
                 "capabilities": result,
                 "total_tools": 31,
-                "total_agents": 6,
+                "total_agents": 8,
                 "note": "All capabilities are accessed through the process_query tool using natural language"
             }, ensure_ascii=False, indent=2))]
 
@@ -512,10 +511,10 @@ async def main():
     async with stdio_server() as (read_stream, write_stream):
         logger.info("Stock Market Orchestrator MCP Server starting...")
         logger.info("This server provides access to the full multi-agent system")
-        logger.info("Architecture: Claude Desktop -> orchestrator_server.py -> HybridOrchestrator -> 6 Agents -> 31 Tools")
+        logger.info("Architecture: Claude Desktop -> orchestrator_server.py -> MultiAgentOrchestrator -> 8 Agents -> 31 Tools")
 
         # Pre-initialize orchestrator at startup to avoid timeout on first query
-        logger.info("Pre-initializing HybridOrchestrator...")
+        logger.info("Pre-initializing MultiAgentOrchestrator...")
         try:
             await get_orchestrator()
             logger.info("Orchestrator pre-initialized successfully!")

@@ -12,6 +12,7 @@ import datetime
 import logging
 import tempfile
 import os
+import time
 from typing import Optional, List, Dict
 from decimal import Decimal
 import concurrent.futures
@@ -23,9 +24,96 @@ import matplotlib.pyplot as plt
 import mplfinance as mpf
 
 from ..shared.database import execute_sql_in_thread
-from .chart_generator import get_chart_generator, generate_fast_chart
+from .chart_generator import get_chart_generator, generate_fast_chart, generate_interactive_chart
 
 logger = logging.getLogger(__name__)
+
+# ============================================================================
+# CRITICAL: Suppress vnstock logging to prevent "I/O operation on closed file"
+# The issue is that vnstock library uses logging inside its modules, and when
+# running in thread pools with closed stdout/stderr, the logging fails.
+# Solution: Disable all vnstock-related loggers completely AND install a
+# custom handler that ignores I/O errors.
+# ============================================================================
+
+class _SafeStreamHandler(logging.StreamHandler):
+    """A StreamHandler that silently ignores I/O errors (for thread safety)"""
+    def emit(self, record):
+        try:
+            super().emit(record)
+        except (ValueError, OSError, IOError):
+            # Ignore I/O errors like "I/O operation on closed file"
+            pass
+
+def _suppress_vnstock_logging():
+    """Suppress vnstock logging completely - call this before any vnstock import"""
+    vnstock_loggers = [
+        'vnstock', 'vnstock.explorer', 'vnstock.common', 'vnstock.core',
+        'vnai', 'vnstock.explorer.vci', 'vnstock.explorer.tcbs', 'vnstock.quote',
+        'vnstock.common.data', 'vnstock.common.client', 'vnstock.core.utils',
+        'vnstock.core.utils.client', 'vnstock.explorer.tcbs.screener'
+    ]
+    for logger_name in vnstock_loggers:
+        vnlogger = logging.getLogger(logger_name)
+        vnlogger.setLevel(logging.CRITICAL + 100)  # Beyond CRITICAL to disable completely
+        vnlogger.propagate = False
+        vnlogger.disabled = True
+        # Clear any existing handlers and add NullHandler
+        vnlogger.handlers = []
+        vnlogger.addHandler(logging.NullHandler())
+
+def _install_safe_root_handler():
+    """Replace root logger handlers with safe versions that ignore I/O errors"""
+    root_logger = logging.getLogger()
+    new_handlers = []
+    for handler in root_logger.handlers:
+        if isinstance(handler, logging.StreamHandler) and not isinstance(handler, _SafeStreamHandler):
+            # Replace with safe version
+            safe_handler = _SafeStreamHandler(handler.stream)
+            safe_handler.setLevel(handler.level)
+            safe_handler.setFormatter(handler.formatter)
+            new_handlers.append(safe_handler)
+        else:
+            new_handlers.append(handler)
+    root_logger.handlers = new_handlers
+
+# Call suppression at module load time
+_suppress_vnstock_logging()
+_install_safe_root_handler()
+
+# Rate limiting for VCI API calls
+_last_vci_call_time = 0
+_VCI_RATE_LIMIT_DELAY = 7  # seconds between VCI calls to avoid rate limit
+
+
+def _rate_limit_vci():
+    """Apply rate limiting for VCI API calls to avoid rate limit errors"""
+    global _last_vci_call_time
+    current_time = time.time()
+    time_since_last_call = current_time - _last_vci_call_time
+
+    if time_since_last_call < _VCI_RATE_LIMIT_DELAY:
+        sleep_time = _VCI_RATE_LIMIT_DELAY - time_since_last_call
+        logger.info(f"Rate limiting VCI: sleeping {sleep_time:.1f}s")
+        time.sleep(sleep_time)
+
+    _last_vci_call_time = time.time()
+
+
+def _safe_vci_call(func, *args, **kwargs):
+    """
+    Safely call VCI API with rate limiting and SystemExit protection.
+    vnstock library calls sys.exit() on rate limit which crashes the server.
+    This wrapper catches SystemExit and converts it to a regular exception.
+    """
+    _rate_limit_vci()
+    try:
+        return func(*args, **kwargs)
+    except SystemExit as e:
+        # vnstock calls sys.exit() on rate limit - convert to regular exception
+        error_msg = str(e) if str(e) else "VCI rate limit exceeded"
+        logger.warning(f"VCI SystemExit caught: {error_msg}")
+        raise RuntimeError(f"VCI API error: {error_msg}") from None
 
 
 def serialize_val(val):
@@ -143,7 +231,14 @@ async def _get_realtime_price_from_api(symbol: str) -> dict:
     """
     def _sync_fetch_realtime():
         try:
+            # Suppress vnstock logging inside thread
+            _suppress_vnstock_logging()
+            _install_safe_root_handler()
+
             from vnstock import Vnstock
+
+            # Suppress again after import
+            _suppress_vnstock_logging()
 
             stock = Vnstock().stock(symbol=symbol.upper(), source='VCI')
 
@@ -501,39 +596,44 @@ async def generate_chart_from_data_mcp(
     symbols: list[str],
     interval: str = "1D",
     lookback_days: int = 30,
-    chart_type: str = "candlestick"
+    chart_type: str = "candlestick",
+    auto_open: bool = True
 ) -> dict:
     """
     MCP version of generate_chart_from_data
-    Fetches stock data and generates candlestick charts
+    Fetches stock data and generates INTERACTIVE HTML candlestick charts
 
-    OPTIMIZED: Sử dụng FastChartGenerator với template caching
-    - Lần đầu: ~1.5s (tạo template)
-    - Các lần sau: ~0.3-0.5s (chỉ update data)
+    Charts are saved to Downloads folder and auto-opened in browser.
 
     Args:
         symbols: List of stock symbols
         interval: Time interval (default: '1D')
         lookback_days: Number of days to look back for data
         chart_type: "candlestick" hoặc "line" (default: "candlestick")
+        auto_open: Auto open chart in browser (default: True)
 
     Returns:
-        dict: Dictionary with chart generation results
+        dict: Dictionary with chart generation results including html_paths
     """
+    import webbrowser
+
     try:
-        # First, fetch stock data for all symbols
+        # First, fetch stock data for all symbols (get extra days for MA calculation)
+        fetch_days = max(lookback_days + 30, 60)  # Extra days for MA20 calculation
+
         stock_data_result = await get_stock_data_mcp(
             symbols=symbols,
             interval=interval,
-            lookback_days=lookback_days,
+            lookback_days=fetch_days,
             realtime=False  # Không cần realtime cho chart
         )
 
         if stock_data_result['status'] == 'error':
             return stock_data_result
 
-        # Generate charts for each symbol using FastChartGenerator
+        # Generate INTERACTIVE HTML charts for each symbol
         chart_results = {}
+        html_paths = {}
         errors = []
 
         for symbol in symbols:
@@ -560,21 +660,32 @@ async def generate_chart_from_data_mcp(
                 errors.append(f"{symbol}: No price data available")
                 continue
 
-            # Sử dụng FastChartGenerator (template caching)
-            result = await generate_fast_chart(
+            # Sử dụng InteractiveChartGenerator (HTML với Plotly)
+            result = await generate_interactive_chart(
                 symbol=symbol,
                 data=data,
-                chart_type=chart_type,
-                title=f"{symbol} - {'Candlestick' if chart_type == 'candlestick' else 'Price'} Chart"
+                days=lookback_days,
+                display_days=lookback_days,  # Only display requested days
+                company_name=""
             )
 
-            if result['status'] == 'success':
+            if result.get('status') == 'success':
+                file_path = result.get('file_path', '')
                 chart_results[symbol] = {
                     "status": "success",
-                    "chart_path": result['chart_path'],
+                    "chart_path": file_path,
                     "data_points": result.get('data_points', 0),
-                    "message": f"Chart generated successfully for {symbol}"
+                    "message": f"Interactive HTML chart generated for {symbol}"
                 }
+                html_paths[symbol] = file_path
+
+                # Auto-open in browser
+                if auto_open and file_path:
+                    try:
+                        webbrowser.open(f'file://{file_path}')
+                        logger.info(f"Opened chart in browser: {file_path}")
+                    except Exception as browser_error:
+                        logger.warning(f"Failed to open browser: {browser_error}")
             else:
                 chart_results[symbol] = result
                 errors.append(f"{symbol}: {result.get('message')}")
@@ -583,14 +694,16 @@ async def generate_chart_from_data_mcp(
             return {
                 "status": "partial_success",
                 "results": chart_results,
+                "html_paths": html_paths,
                 "errors": errors,
-                "message": f"Generated {len(chart_results) - len(errors)}/{len(symbols)} charts successfully"
+                "message": f"Generated {len(html_paths)}/{len(symbols)} charts successfully"
             }
 
         return {
             "status": "success",
             "results": chart_results,
-            "message": f"Successfully generated charts for all {len(symbols)} symbols"
+            "html_paths": html_paths,
+            "message": f"Successfully generated interactive charts for all {len(symbols)} symbols. Charts opened in browser."
         }
 
     except Exception as e:
@@ -605,83 +718,167 @@ async def generate_chart_from_data_mcp(
 async def get_stock_details_from_tcbs_mcp(symbols: list[str]) -> dict:
     """
     MCP version of stock_search_filter_tool
-    Get detailed stock information from TCBS/VCI for specific symbols
-    Uses VCI as fallback when TCBS is unavailable
+    Get detailed stock information for specific symbols
+
+    Data Source Strategy (optimized for speed - Jan 2026):
+    1. DATABASE first (instant - stock_screener table has 80+ fields)
+    2. VCI API fallback (stable but slow - 7s rate limit per call)
+    3. TCBS API last resort (has 80+ fields but unstable - returns 404)
 
     Args:
         symbols: List of stock symbols to get details for
 
     Returns:
-        dict: Dictionary containing detailed stock data
+        dict: Dictionary containing detailed stock data with source indicator
     """
     def _sync_get_tcbs_details(symbols: list[str]) -> dict:
-        """Synchronous function to get TCBS details"""
+        """Synchronous function to get stock details - DATABASE first (fastest), API fallback"""
         try:
             import pandas as pd
             import numpy as np
-            from vnstock import Vnstock
 
-            # Try TCBS first
+            # ================================================================
+            # STRATEGY (optimized for speed):
+            # 1. DATABASE first (instant - from stock_screener table)
+            # 2. VCI API fallback (stable but slow - 7s rate limit per call)
+            # 3. TCBS API last resort (unstable - often 404)
+            # ================================================================
+
+            # Try DATABASE first (fastest - no API calls needed)
+            logger.info(f"Fetching stock details from DATABASE for {len(symbols)} symbols")
             try:
-                stock = Vnstock().stock(symbol='ACB', source='TCBS')
-                params = {"exchangeName": "HOSE,HNX,UPCOM"}
-                all_stocks_df = stock.screener.stock(params=params, limit=1700)
-            except Exception as tcbs_error:
-                logger.warning(f"TCBS unavailable: {tcbs_error}, falling back to VCI")
-                all_stocks_df = pd.DataFrame()
+                from ..shared.database import execute_sql_in_thread
 
-            # Fallback to VCI if TCBS fails
-            if all_stocks_df.empty:
-                logger.info("Using VCI fallback for stock details")
-                result_data = []
+                # Query stock_screener table which has comprehensive data
+                symbols_str = "', '".join([s.upper() for s in symbols])
+                sql_query = f"""
+                SELECT * FROM stock.stock_screener
+                WHERE ticker IN ('{symbols_str}')
+                """
 
-                for symbol in symbols:
-                    try:
-                        vci_stock = Vnstock().stock(symbol=symbol.upper(), source='VCI')
+                records, is_error = execute_sql_in_thread(sql_query)
 
-                        # Get overview
-                        overview = vci_stock.company.overview()
-                        overview_data = overview.to_dict(orient='records')[0] if not overview.empty else {}
-
-                        # Get financial ratios
-                        ratios = vci_stock.finance.ratio(period='quarter')
-                        latest_ratios = ratios.to_dict(orient='records')[0] if not ratios.empty else {}
-
-                        # Get price history
-                        history = vci_stock.quote.history(start='2026-01-01', end='2026-01-12')
-                        latest_price = history.to_dict(orient='records')[-1] if not history.empty else {}
-
-                        # Combine data
-                        stock_data = {
-                            'ticker': symbol.upper(),
-                            'close': latest_price.get('close'),
-                            'volume': latest_price.get('volume'),
-                            **{k: v for k, v in overview_data.items() if k != 'symbol'},
-                            **{k: v for k, v in latest_ratios.items() if k not in ['ticker', 'symbol']},
-                            'source': 'VCI'
-                        }
-
-                        # Clean NaN values
-                        stock_data = {k: (None if pd.isna(v) else v) for k, v in stock_data.items()}
+                if not is_error and records:
+                    result_data = []
+                    for record in records:
+                        # Convert Decimal to float for JSON serialization
+                        stock_data = {}
+                        for k, v in record.items():
+                            if hasattr(v, '__float__'):
+                                stock_data[k] = float(v)
+                            elif v is None or (isinstance(v, float) and pd.isna(v)):
+                                stock_data[k] = None
+                            else:
+                                stock_data[k] = v
+                        stock_data['source'] = 'DATABASE'
                         result_data.append(stock_data)
 
-                    except Exception as e:
-                        logger.warning(f"Error fetching VCI data for {symbol}: {e}")
-                        result_data.append({
-                            'ticker': symbol.upper(),
-                            'error': str(e),
-                            'source': 'VCI'
-                        })
+                    if len(result_data) == len(symbols):
+                        return {
+                            "status": "success",
+                            "message": f"Found {len(result_data)} stock(s) from DATABASE (fast)",
+                            "count": len(result_data),
+                            "data": result_data,
+                            "source": "DATABASE"
+                        }
+                    elif result_data:
+                        # Partial data from DB, return it (faster than API)
+                        return {
+                            "status": "partial_success",
+                            "message": f"Found {len(result_data)}/{len(symbols)} stock(s) from DATABASE",
+                            "count": len(result_data),
+                            "data": result_data,
+                            "source": "DATABASE"
+                        }
+            except Exception as db_error:
+                logger.warning(f"Database error: {db_error}, trying API fallback")
 
+            # Suppress vnstock logging INSIDE thread to prevent I/O errors
+            _suppress_vnstock_logging()
+            _install_safe_root_handler()
+
+            from vnstock import Vnstock
+
+            # Suppress again after import (vnstock creates loggers during init)
+            _suppress_vnstock_logging()
+
+            # Try VCI API (stable but slow due to rate limiting)
+            logger.info(f"DATABASE miss, trying VCI API for {len(symbols)} symbols")
+            result_data = []
+            vci_success = True
+
+            for symbol in symbols:
+                try:
+                    vci_stock = Vnstock().stock(symbol=symbol.upper(), source='VCI')
+
+                    # Get overview with rate limiting and SystemExit protection
+                    overview = _safe_vci_call(vci_stock.company.overview)
+                    overview_data = overview.to_dict(orient='records')[0] if not overview.empty else {}
+
+                    # Get financial ratios with rate limiting
+                    ratios = _safe_vci_call(vci_stock.finance.ratio, period='quarter')
+                    latest_ratios = ratios.to_dict(orient='records')[0] if not ratios.empty else {}
+
+                    # Get price history with rate limiting
+                    today = datetime.date.today()
+                    start_date = (today - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
+                    end_date = today.strftime('%Y-%m-%d')
+                    history = _safe_vci_call(vci_stock.quote.history, start=start_date, end=end_date)
+                    latest_price = history.to_dict(orient='records')[-1] if not history.empty else {}
+
+                    # Combine data
+                    stock_data = {
+                        'ticker': symbol.upper(),
+                        'close': latest_price.get('close'),
+                        'volume': latest_price.get('volume'),
+                        **{k: v for k, v in overview_data.items() if k != 'symbol'},
+                        **{k: v for k, v in latest_ratios.items() if k not in ['ticker', 'symbol']},
+                        'source': 'VCI'
+                    }
+
+                    # Clean NaN values
+                    stock_data = {k: (None if pd.isna(v) else v) for k, v in stock_data.items()}
+                    result_data.append(stock_data)
+
+                except (RuntimeError, Exception) as e:
+                    logger.warning(f"VCI error for {symbol}: {e}")
+                    vci_success = False
+                    break  # Stop VCI attempts, try TCBS
+
+            # If VCI succeeded for all symbols, return
+            if vci_success and len(result_data) == len(symbols):
                 return {
-                    "status": "success" if result_data else "error",
-                    "message": f"Found {len(result_data)} stock(s) from VCI",
+                    "status": "success",
+                    "message": f"Found {len(result_data)} stock(s) from VCI API",
                     "count": len(result_data),
                     "data": result_data,
                     "source": "VCI"
                 }
 
-            # TCBS worked - process as before
+            # Fallback to TCBS if VCI failed
+            logger.info("VCI incomplete, trying TCBS fallback")
+            try:
+                stock = Vnstock().stock(symbol='ACB', source='TCBS')
+                params = {"exchangeName": "HOSE,HNX,UPCOM"}
+                all_stocks_df = stock.screener.stock(params=params, limit=1700)
+            except Exception as tcbs_error:
+                logger.warning(f"TCBS also unavailable: {tcbs_error}")
+                # Return partial VCI results if any
+                if result_data:
+                    return {
+                        "status": "partial_success",
+                        "message": f"Found {len(result_data)} stock(s) from VCI (TCBS unavailable)",
+                        "count": len(result_data),
+                        "data": result_data,
+                        "source": "VCI"
+                    }
+                return {
+                    "status": "error",
+                    "message": "All sources unavailable (DATABASE, VCI, TCBS)",
+                    "data": []
+                }
+
+            # TCBS worked - process
             filtered_df = all_stocks_df[all_stocks_df['ticker'].isin(symbols)]
 
             if filtered_df.empty:
@@ -719,7 +916,7 @@ async def get_stock_details_from_tcbs_mcp(symbols: list[str]) -> dict:
 
             return {
                 "status": "success",
-                "message": f"Found {len(result_data)} stock(s)",
+                "message": f"Found {len(result_data)} stock(s) from TCBS (fallback)",
                 "count": len(result_data),
                 "data": result_data,
                 "source": "TCBS"
