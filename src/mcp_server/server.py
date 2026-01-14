@@ -418,7 +418,24 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="generate_chart_from_data",
-            description="[DATABASE] Generate stock charts using FastChartGenerator with template caching. First call ~1.5s, subsequent calls ~0.3-0.5s. Supports 'candlestick' and 'line' chart types.",
+            description="""[CHART TOOL - BẮT BUỘC SỬ DỤNG KHI VẼ BIỂU ĐỒ] Generate interactive HTML stock charts with Plotly.
+
+QUAN TRỌNG: Khi người dùng yêu cầu vẽ biểu đồ/chart cho cổ phiếu, BẮT BUỘC phải sử dụng tool này!
+KHÔNG được tự generate HTML code - hãy dùng tool này.
+
+Features:
+- Biểu đồ nến (candlestick) với Volume
+- Đường MA5, MA20
+- Chỉ số RSI
+- Tự động mở trong browser
+- File HTML lưu tại Downloads folder
+
+Params:
+- symbols: ["VCB"] hoặc ["VCB", "FPT"] (list mã cổ phiếu)
+- lookback_days: 30 (số ngày dữ liệu)
+- chart_type: "candlestick" hoặc "line"
+
+Example: Vẽ biểu đồ VCB 60 ngày -> generate_chart_from_data(symbols=["VCB"], lookback_days=60)""",
             inputSchema=GenerateChartInput.model_json_schema()
         ),
         Tool(

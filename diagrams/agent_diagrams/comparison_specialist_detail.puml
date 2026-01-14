@@ -1,0 +1,66 @@
+!pragma charset UTF-8
+@startuml comparison_specialist_detail
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+title ComparisonSpecialist - Chi tiết
+
+skinparam rectangle {
+    BackgroundColor<<input>> #E8E8FF
+    BackgroundColor<<agent>> #D4EDDA
+    BackgroundColor<<tool>> #FFF3CD
+    BackgroundColor<<output>> #F0E6FF
+    BorderColor #333333
+    FontSize 10
+}
+
+rectangle "User Query\n(So sánh VCB vs TCB)" as input <<input>>
+
+package "ComparisonSpecialist" as agent <<agent>> {
+    rectangle "compare(symbols)" as compare <<tool>>
+    rectangle "_gather_comparison_data()" as gather <<tool>>
+    rectangle "_build_comparison_table()" as table <<tool>>
+}
+
+package "MCP Tools" as mcp {
+    rectangle "get_stock_details_from_tcbs" as details <<tool>>
+    rectangle "get_technical_indicators" as tech <<tool>>
+    rectangle "get_stock_price_prediction" as predict <<tool>>
+}
+
+rectangle "OpenAI GPT-4o-mini\n(Comparison Analysis)" as openai <<agent>>
+
+rectangle "Response\n(Comparison Table + Ranking)" as output <<output>>
+
+input --> agent : "Extract symbols"
+
+agent --> gather : "Parallel data fetch"
+gather --> details : "Price, fundamentals"
+gather --> tech : "RSI, MACD, MA"
+gather --> predict : "3-day prediction"
+
+agent --> table : "Build comparison"
+table --> openai : "Analysis prompt"
+
+openai --> output
+
+note right of agent
+  **Comparison Criteria:**
+  - Price & Change %
+  - P/E, P/B, ROE, ROA
+  - RSI, MACD signals
+  - Prediction trend
+  - Trading volume
+end note
+
+note bottom of output
+  **Output Format:**
+  - Side-by-side table
+  - Winner per metric
+  - Overall recommendation
+  - Investment suggestion
+end note
+
+@enduml

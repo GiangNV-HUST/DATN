@@ -35,7 +35,7 @@ rectangle "predict_stock_price" as predict <<tool>>
 rectangle "batch_predict_stocks" as batch_predict <<tool>>
 rectangle "get_prediction_confidence" as confidence <<tool>>
 
-rectangle "Ensemble Stacking\n(5 Models)" as ensemble <<ensemble>> {
+package "Ensemble Stacking\n(5 Models)" as ensemble <<ensemble>> {
     rectangle "PatchTST" as patchtst
     rectangle "LSTM + Attention" as lstm
     rectangle "LightGBM" as lgbm
@@ -44,7 +44,7 @@ rectangle "Ensemble Stacking\n(5 Models)" as ensemble <<ensemble>> {
     rectangle "Meta-Model\n(MLPRegressor)" as meta
 }
 
-rectangle "Scenario Handlers" as handlers <<scenario>> {
+package "Scenario Handlers" as handlers <<scenario>> {
     rectangle "News Shock" as news
     rectangle "Market Crash" as crash
     rectangle "Foreign Flow" as foreign

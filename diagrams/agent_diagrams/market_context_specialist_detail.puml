@@ -1,0 +1,69 @@
+!pragma charset UTF-8
+@startuml market_context_specialist_detail
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+title MarketContextSpecialist - Chi tiết
+
+skinparam rectangle {
+    BackgroundColor<<input>> #E8E8FF
+    BackgroundColor<<agent>> #D4EDDA
+    BackgroundColor<<tool>> #FFF3CD
+    BackgroundColor<<output>> #F0E6FF
+    BorderColor #333333
+    FontSize 10
+}
+
+rectangle "User Query\n(Thị trường, VN-Index, ngành)" as input <<input>>
+
+package "MarketContextSpecialist" as agent <<agent>> {
+    rectangle "get_market_overview()" as overview <<tool>>
+    rectangle "get_sector_performance()" as sector <<tool>>
+    rectangle "get_market_top_movers()" as movers <<tool>>
+    rectangle "_get_index_data()" as index <<tool>>
+}
+
+package "MCP Tools" as mcp {
+    rectangle "screen_stocks" as screen <<tool>>
+    rectangle "get_stock_details_from_tcbs" as details <<tool>>
+}
+
+rectangle "OpenAI GPT-4o-mini\n(Analysis & Formatting)" as openai <<agent>>
+
+rectangle "Response\n(Market Overview)" as output <<output>>
+
+input --> agent
+
+agent --> overview : "Market breadth\n(100 stocks sample)"
+agent --> sector : "Sector performance\n(8 sectors)"
+agent --> movers : "Top gainers/losers\n(parallel queries)"
+
+overview --> screen
+sector --> details
+movers --> screen
+index --> details
+
+overview --> openai
+sector --> openai
+movers --> openai
+
+openai --> output
+
+note right of agent
+  **Features:**
+  - Parallel data gathering
+  - 30s timeout per query
+  - Fallback to partial data
+  - Market breadth calculation
+end note
+
+note bottom of mcp
+  **Optimizations:**
+  - Single API call for sectors
+  - Parallel top movers queries
+  - 100 stock sample (not 500)
+end note
+
+@enduml

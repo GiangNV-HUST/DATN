@@ -1,0 +1,99 @@
+@startuml sequence_uc11_market_context
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam sequenceMessageAlign center
+skinparam shadowing false
+
+title UC11: Tổng quan thị trường (Market Context)
+
+actor User
+boundary "Discord Bot" as Bot
+control "Root Agent" as Root
+control "MarketContext Specialist" as Market
+entity "Task Classifier" as Classifier
+entity "Model Selector" as Selector
+participant "Gemini 2.0 Flash" as Flash
+participant "Claude Opus 4.5" as Claude
+entity "Usage Tracker" as Tracker
+participant "MCP Wrapper" as Wrapper
+participant "MCP Client" as Client
+participant "MCP Server" as Server
+database "Database" as DB
+
+User -> Bot: "Thị trường hôm nay thế nào?"
+activate Bot
+
+Bot -> Root: AI Router
+activate Root
+Root -> Root: Agent: MarketContextSpecialist
+
+Root -> Market: Route request
+activate Market
+
+Market -> Classifier: classify_task(query)
+activate Classifier
+Classifier -> Classifier: Extract: MARKET_CONTEXT task
+Classifier --> Market: Task types
+deactivate Classifier
+
+Market -> Selector: get_models_for_tasks
+activate Selector
+Selector --> Market: Flash + Claude Opus
+deactivate Selector
+
+== Parallel Data Gathering ==
+
+par get_market_overview
+    Market -> Wrapper: screen_stocks(limit=100)
+    activate Wrapper
+    Wrapper -> Client: call_tool
+    activate Client
+    Client -> Server: Fetch stocks
+    activate Server
+    Server -> DB: SELECT top 100 by volume
+    activate DB
+    DB --> Server: 100 stocks
+    deactivate DB
+    Server --> Client: Data
+    deactivate Server
+    Client --> Wrapper: Result
+    deactivate Client
+    deactivate Wrapper
+
+    Market -> Market: Calculate market breadth\n(advancing/declining/unchanged)
+else get_market_top_movers
+    Market -> Wrapper: screen_stocks(gainers)
+    Market -> Wrapper: screen_stocks(losers)
+    Market -> Wrapper: screen_stocks(volume)
+end
+
+Market -> Flash: Summarize market data
+activate Flash
+Flash --> Market: Summary
+deactivate Flash
+
+Market -> Tracker: Track Gemini usage
+activate Tracker
+deactivate Tracker
+
+Market -> Claude: Deep market analysis
+activate Claude
+Claude -> Claude: Analyze trends\nSector performance\nInvestment outlook
+Claude --> Market: Complete analysis
+deactivate Claude
+
+Market -> Tracker: Track Claude usage
+activate Tracker
+Tracker -> Tracker: Complete
+deactivate Tracker
+
+Market --> Root: Market overview report
+deactivate Market
+
+Root --> Bot: Response
+deactivate Root
+
+Bot --> User: 📈 Tổng quan thị trường
+deactivate Bot
+
+@enduml

@@ -1,0 +1,118 @@
+@startuml sequence_uc12_comparison
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam sequenceMessageAlign center
+skinparam shadowing false
+
+title UC12: So sánh cổ phiếu (Comparison)
+
+actor User
+boundary "Discord Bot" as Bot
+control "Root Agent" as Root
+control "Comparison Specialist" as Comparison
+entity "Task Classifier" as Classifier
+entity "Model Selector" as Selector
+participant "Gemini 2.0 Flash" as Flash
+participant "GPT-4o" as GPT
+entity "Usage Tracker" as Tracker
+participant "MCP Wrapper" as Wrapper
+participant "MCP Client" as Client
+participant "MCP Server" as Server
+database "Database" as DB
+
+User -> Bot: "So sánh VCB và TCB"
+activate Bot
+
+Bot -> Root: AI Router
+activate Root
+Root -> Root: Extract symbols: [VCB, TCB]
+Root -> Root: Agent: ComparisonSpecialist
+
+Root -> Comparison: Route request
+activate Comparison
+
+Comparison -> Classifier: classify_task(query)
+activate Classifier
+Classifier -> Classifier: Extract: COMPARISON task
+Classifier --> Comparison: Task types
+deactivate Classifier
+
+Comparison -> Selector: get_models_for_tasks
+activate Selector
+Selector --> Comparison: Flash + GPT-4o
+deactivate Selector
+
+== Parallel Data Gathering ==
+
+par VCB Data
+    Comparison -> Wrapper: get_stock_details(VCB)
+    activate Wrapper
+    Wrapper -> Client: call_tool
+    activate Client
+    Client -> Server: Fetch VCB
+    activate Server
+    Server -> DB: SELECT VCB data
+    activate DB
+    DB --> Server: VCB details
+    deactivate DB
+    Server --> Client: Data
+    deactivate Server
+    Client --> Wrapper: Result
+    deactivate Client
+    deactivate Wrapper
+else TCB Data
+    Comparison -> Wrapper: get_stock_details(TCB)
+end
+
+Comparison -> Wrapper: get_technical_indicators([VCB, TCB])
+activate Wrapper
+Wrapper -> Client: call_tool
+Client -> Server: Fetch indicators
+Server -> DB: SELECT RSI, MACD, MA
+DB --> Server: Technical data
+Server --> Client: Data
+Client --> Wrapper: Result
+deactivate Wrapper
+
+Comparison -> Wrapper: get_stock_price_prediction([VCB, TCB])
+activate Wrapper
+Wrapper -> Client: call_tool
+Client -> Server: Fetch predictions
+Server -> DB: SELECT predictions
+DB --> Server: 3-day forecast
+Server --> Client: Data
+Client --> Wrapper: Result
+deactivate Wrapper
+
+Comparison -> Flash: Summarize comparison data
+activate Flash
+Flash --> Comparison: Structured summary
+deactivate Flash
+
+Comparison -> Tracker: Track Gemini usage
+activate Tracker
+deactivate Tracker
+
+Comparison -> Comparison: Build comparison table
+
+Comparison -> GPT: Compare & recommend
+activate GPT
+GPT -> GPT: Analyze metrics\nDetermine winner\nInvestment advice
+GPT --> Comparison: Comparison report
+deactivate GPT
+
+Comparison -> Tracker: Track GPT usage
+activate Tracker
+Tracker -> Tracker: Complete
+deactivate Tracker
+
+Comparison --> Root: Complete comparison
+deactivate Comparison
+
+Root --> Bot: Response
+deactivate Root
+
+Bot --> User: ⚖️ So sánh VCB vs TCB
+deactivate Bot
+
+@enduml

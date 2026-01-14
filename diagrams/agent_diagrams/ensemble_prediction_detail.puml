@@ -24,7 +24,7 @@ rectangle "MCP Server:\nget_stock_price\n_prediction" as mcp <<mcp>>
 rectangle "PredictionService" as service <<service>>
 rectangle "EnsembleStacking" as ensemble <<ensemble>>
 
-rectangle "Level 1: Base Models" as level1 <<model>> {
+package "Level 1: Base Models" as level1 <<model>> {
     rectangle "PatchTST\nTransformer" as patchtst
     rectangle "LightGBM\nGradient Boost" as lgb
     rectangle "LSTM+Attention\nDeep Learning" as lstm
@@ -32,7 +32,7 @@ rectangle "Level 1: Base Models" as level1 <<model>> {
     rectangle "XGBoost\nGradient Boost" as xgb
 }
 
-rectangle "Level 2: Meta-Model" as level2 <<meta>> {
+package "Level 2: Meta-Model" as level2 <<meta>> {
     rectangle "MLPRegressor\nNeural Network\n(64→32)" as meta
 }
 

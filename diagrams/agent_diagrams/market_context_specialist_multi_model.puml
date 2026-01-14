@@ -1,0 +1,77 @@
+!pragma charset UTF-8
+@startuml market_context_specialist_multi_model
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+title Market Context Specialist - Multi-Model Architecture
+
+skinparam rectangle {
+    BackgroundColor<<input>> #E8E8FF
+    BackgroundColor<<agent>> #D4EDDA
+    BackgroundColor<<model>> #E1F5FE
+    BackgroundColor<<tool>> #FFF3CD
+    BackgroundColor<<output>> #F0E6FF
+    BorderColor #333333
+    FontSize 10
+}
+
+rectangle "User Query\n(Thị trường, VN-Index, ngành)" as input <<input>>
+
+package "MarketContextSpecialist" as agent <<agent>> {
+    rectangle "get_market_overview()" as overview <<tool>>
+    rectangle "get_sector_performance()" as sector <<tool>>
+    rectangle "get_market_top_movers()" as movers <<tool>>
+}
+
+package "MCP Tools" as mcp {
+    rectangle "screen_stocks" as screen <<tool>>
+    rectangle "get_stock_details_from_tcbs" as details <<tool>>
+}
+
+rectangle "Claude Opus 4.5\n(Deep Market Analysis)" as claude <<model>>
+rectangle "Gemini 2.0 Flash\n(Data Summary)" as gemini <<model>>
+
+rectangle "Response\n(Market Overview)" as output <<output>>
+
+input --> agent
+
+agent --> overview : "Market breadth\n(100 stocks sample)"
+agent --> sector : "Sector performance\n(8 sectors)"
+agent --> movers : "Top gainers/losers\n(parallel queries)"
+
+overview --> screen
+sector --> details
+movers --> screen
+
+overview --> gemini : "Summarize raw data"
+sector --> gemini
+movers --> gemini
+
+gemini --> claude : "Deep analysis"
+claude --> output
+
+note right of agent
+  **Features:**
+  - Parallel data gathering
+  - 30s timeout per query
+  - Fallback to partial data
+  - Market breadth calculation
+end note
+
+note right of claude
+  **Claude Opus 4.5:**
+  - Complex market analysis
+  - Sector trend detection
+  - Investment recommendations
+end note
+
+note right of gemini
+  **Gemini 2.0 Flash:**
+  - Fast data summarization
+  - Raw data processing
+  - Cost-efficient
+end note
+
+@enduml

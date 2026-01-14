@@ -18,13 +18,13 @@ skinparam rectangle {
 
 title Ensemble Model Retraining Workflow
 
-rectangle "MỖI NGÀY" as daily <<daily>> {
+package "MỖI NGÀY" as daily <<daily>> {
     rectangle "2h sáng:\nThu thập data mới\nfrom vnstock" as collect
     rectangle "3h sáng:\nLưu vào database" as save_db
     rectangle "Model hiện tại\nđưa ra predictions" as predict
 }
 
-rectangle "MỖI TUẦN (Thứ 2)" as weekly <<weekly>> {
+package "MỖI TUẦN (Thứ 2)" as weekly <<weekly>> {
     rectangle "Bước 1:\nCheck models\ncần retrain" as check <<check>>
     rectangle "Bước 2:\nFetch 1500 ngày\ndata mới nhất" as fetch <<check>>
     rectangle "Bước 3:\nRetrain models" as retrain <<retrain>>

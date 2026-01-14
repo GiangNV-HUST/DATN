@@ -110,20 +110,31 @@ Hay cung cap cai nhin tong quan, chinh xac ve thi truong!
     async def get_market_overview(self) -> Dict:
         """
         Get overall market overview including indices and breadth
+        OPTIMIZED: Use smaller sample for faster response
 
         Returns:
             Dict with market overview data
         """
         try:
-            # Use screen_stocks to calculate market breadth
-            # Get all stocks first
-            all_stocks_result = await self.mcp_client.call_tool(
-                "screen_stocks",
-                {"conditions": {}, "sort_by": "avg_trading_value_20d", "limit": 500}
+            # OPTIMIZED: Use smaller sample (100 stocks) for market breadth
+            # This is much faster and still representative
+            all_stocks_result = await asyncio.wait_for(
+                self.mcp_client.call_tool(
+                    "screen_stocks",
+                    {"conditions": {}, "sort_by": "avg_trading_value_20d", "limit": 100}
+                ),
+                timeout=30.0  # 30 second timeout
             )
 
             if all_stocks_result.get("status") != "success":
-                return {"status": "error", "message": "Cannot fetch market data"}
+                # Fallback to index data only
+                index_data = await self._get_index_data()
+                return {
+                    "status": "partial",
+                    "indices": index_data,
+                    "market_breadth": {"note": "Market breadth unavailable"},
+                    "timestamp": datetime.now().isoformat()
+                }
 
             stocks = all_stocks_result.get("data", [])
 
@@ -141,8 +152,7 @@ Hay cung cap cai nhin tong quan, chinh xac ve thi truong!
                 else:
                     unchanged += 1
 
-            # Get index data (VN-Index symbol approximation using ETF E1VFVN30)
-            # Note: vnstock doesn't directly support index data, so we use proxy
+            # Get index data (using major stocks as proxy)
             index_data = await self._get_index_data()
 
             return {
@@ -153,11 +163,21 @@ Hay cung cap cai nhin tong quan, chinh xac ve thi truong!
                     "declining": declining,
                     "unchanged": unchanged,
                     "total": len(stocks),
+                    "sample_size": 100,
                     "advance_decline_ratio": round(advancing / declining, 2) if declining > 0 else advancing
                 },
                 "timestamp": datetime.now().isoformat()
             }
 
+        except asyncio.TimeoutError:
+            # Return partial data if timeout
+            index_data = await self._get_index_data()
+            return {
+                "status": "partial",
+                "indices": index_data,
+                "market_breadth": {"note": "Timeout - using index data only"},
+                "timestamp": datetime.now().isoformat()
+            }
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
@@ -288,6 +308,7 @@ Hay cung cap cai nhin tong quan, chinh xac ve thi truong!
     async def get_market_top_movers(self, limit: int = 10) -> Dict:
         """
         Get top market movers (gainers, losers, volume leaders)
+        OPTIMIZED: Run queries in parallel with timeout
 
         Args:
             limit: Number of stocks per category
@@ -296,37 +317,63 @@ Hay cung cap cai nhin tong quan, chinh xac ve thi truong!
             Dict with top movers data
         """
         try:
-            # Top gainers
-            top_gainers_result = await self.mcp_client.call_tool(
-                "screen_stocks",
-                {
-                    "conditions": {"change_percent_1d": ">0"},
-                    "sort_by": "change_percent_1d",
-                    "ascending": False,
-                    "limit": limit
-                }
-            )
+            # Run all 3 queries in PARALLEL for speed
+            async def get_gainers():
+                try:
+                    return await asyncio.wait_for(
+                        self.mcp_client.call_tool(
+                            "screen_stocks",
+                            {
+                                "conditions": {"change_percent_1d": ">0"},
+                                "sort_by": "change_percent_1d",
+                                "ascending": False,
+                                "limit": limit
+                            }
+                        ),
+                        timeout=20.0
+                    )
+                except:
+                    return {"data": []}
 
-            # Top losers
-            top_losers_result = await self.mcp_client.call_tool(
-                "screen_stocks",
-                {
-                    "conditions": {"change_percent_1d": "<0"},
-                    "sort_by": "change_percent_1d",
-                    "ascending": True,
-                    "limit": limit
-                }
-            )
+            async def get_losers():
+                try:
+                    return await asyncio.wait_for(
+                        self.mcp_client.call_tool(
+                            "screen_stocks",
+                            {
+                                "conditions": {"change_percent_1d": "<0"},
+                                "sort_by": "change_percent_1d",
+                                "ascending": True,
+                                "limit": limit
+                            }
+                        ),
+                        timeout=20.0
+                    )
+                except:
+                    return {"data": []}
 
-            # Volume leaders
-            volume_leaders_result = await self.mcp_client.call_tool(
-                "screen_stocks",
-                {
-                    "conditions": {},
-                    "sort_by": "avg_trading_value_20d",
-                    "ascending": False,
-                    "limit": limit
-                }
+            async def get_volume():
+                try:
+                    return await asyncio.wait_for(
+                        self.mcp_client.call_tool(
+                            "screen_stocks",
+                            {
+                                "conditions": {},
+                                "sort_by": "avg_trading_value_20d",
+                                "ascending": False,
+                                "limit": limit
+                            }
+                        ),
+                        timeout=20.0
+                    )
+                except:
+                    return {"data": []}
+
+            # Execute in parallel
+            top_gainers_result, top_losers_result, volume_leaders_result = await asyncio.gather(
+                get_gainers(),
+                get_losers(),
+                get_volume()
             )
 
             return {
@@ -356,6 +403,7 @@ Hay cung cap cai nhin tong quan, chinh xac ve thi truong!
     ) -> AsyncIterator[str]:
         """
         Analyze market context based on user query
+        OPTIMIZED: Run data gathering in parallel with timeouts
 
         Args:
             user_query: User's question about the market
@@ -368,11 +416,6 @@ Hay cung cap cai nhin tong quan, chinh xac ve thi truong!
         query_lower = user_query.lower()
 
         try:
-            # Gather market data with error handling for each component
-            market_overview = {"status": "unavailable", "message": "Skipped"}
-            sector_performance = {"status": "unavailable", "message": "Skipped"}
-            top_movers = {"status": "unavailable", "message": "Skipped"}
-
             # Check if user is asking about specific sectors
             sector_keywords = {
                 "ngan hang": ["ngan hang", "ngân hàng", "bank"],
@@ -391,27 +434,38 @@ Hay cung cap cai nhin tong quan, chinh xac ve thi truong!
                 if any(kw in query_lower for kw in keywords):
                     sectors_to_check.append(sector)
 
-            # Get market overview (most important)
-            try:
-                market_overview = await self.get_market_overview()
-            except Exception as e:
-                market_overview = {"status": "error", "message": str(e)}
+            need_sectors = sectors_to_check or any(kw in query_lower for kw in ["ngành", "nganh", "sector", "hiệu suất ngành"])
 
-            # Get sector performance if user asks about sectors (now optimized - single API call)
-            if sectors_to_check or any(kw in query_lower for kw in ["ngành", "nganh", "sector", "hiệu suất ngành"]):
+            # OPTIMIZED: Run ALL data gathering in PARALLEL
+            async def safe_get_overview():
                 try:
-                    # Pass specific sectors or None for all
-                    sector_performance = await self.get_sector_performance(
-                        sectors_filter=sectors_to_check if sectors_to_check else None
-                    )
-                except Exception as e:
-                    sector_performance = {"status": "error", "message": str(e)}
+                    return await asyncio.wait_for(self.get_market_overview(), timeout=30.0)
+                except:
+                    return {"status": "timeout", "message": "Market overview timed out"}
 
-            # Get top movers from database (fast)
-            try:
-                top_movers = await self.get_market_top_movers(limit=5)
-            except Exception as e:
-                top_movers = {"status": "error", "message": str(e)}
+            async def safe_get_sectors():
+                if not need_sectors:
+                    return {"status": "skipped", "message": "Not requested"}
+                try:
+                    return await asyncio.wait_for(
+                        self.get_sector_performance(sectors_filter=sectors_to_check if sectors_to_check else None),
+                        timeout=30.0
+                    )
+                except:
+                    return {"status": "timeout", "message": "Sector data timed out"}
+
+            async def safe_get_movers():
+                try:
+                    return await asyncio.wait_for(self.get_market_top_movers(limit=5), timeout=30.0)
+                except:
+                    return {"status": "timeout", "message": "Top movers timed out"}
+
+            # Execute ALL in parallel - much faster!
+            market_overview, sector_performance, top_movers = await asyncio.gather(
+                safe_get_overview(),
+                safe_get_sectors(),
+                safe_get_movers()
+            )
 
             # Store in shared state if provided
             if shared_state is not None:

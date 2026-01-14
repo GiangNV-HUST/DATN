@@ -5,12 +5,14 @@ skinparam backgroundColor #FFFFFF
 skinparam shadowing false
 skinparam defaultFontName "Times New Roman"
 
+title Multi-Model Architecture (8 Specialists)
 
 skinparam rectangle {
     BackgroundColor<<agent>> #FFD6D6
     BackgroundColor<<model>> #E1F5FE
     BackgroundColor<<router>> #FFECB3
     BackgroundColor<<task>> #D4F1D4
+    BackgroundColor<<market>> #D4EDDA
     BorderColor #333333
     FontSize 11
 }
@@ -32,11 +34,15 @@ rectangle "Claude Sonnet 4.5" as claude_sonnet <<model>>
 rectangle "Claude Opus 4.5" as claude_opus <<model>>
 rectangle "GPT-4o" as gpt <<model>>
 
+' 8 Specialists
 rectangle "General Agent" as general <<agent>>
 rectangle "Screener Specialist" as screener <<agent>>
 rectangle "Analysis Specialist" as analysis <<agent>>
 rectangle "Discovery Specialist" as discovery <<agent>>
 rectangle "Investment Planner" as investment <<agent>>
+rectangle "Alert Manager" as alert <<agent>>
+rectangle "Market Context Specialist" as market <<market>>
+rectangle "Comparison Specialist" as comparison <<market>>
 
 query --> root
 root --> router
@@ -45,20 +51,23 @@ router --> analyzer
 
 analyzer --> gemini_flash : "DATA_QUERY, CRUD\n(đơn giản nhất)"
 analyzer --> claude_sonnet : "SCREENING, ANALYSIS\n(sàng lọc & phân tích)"
-analyzer --> claude_opus : "DISCOVERY\n(khám phá - phức tạp nhất)"
-analyzer --> gpt : "ADVISORY\n(tư vấn)"
+analyzer --> claude_opus : "DISCOVERY, MARKET\n(khám phá - phức tạp)"
+analyzer --> gpt : "ADVISORY, COMPARISON\n(tư vấn & so sánh)"
 
 gemini_flash --> general
+gemini_flash --> alert
 claude_sonnet --> screener
 claude_sonnet --> analysis
 claude_opus --> discovery
+claude_opus --> market
 gpt --> investment
+gpt --> comparison
 
 note right of gemini_flash
   Gemini 2.0 Flash
   - Ultra fast, ultra cheap
   - Truy vấn đơn giản, CRUD
-  - Conversation
+  - Alert management
 end note
 
 note right of claude_sonnet
@@ -72,14 +81,20 @@ note right of claude_opus
   Claude Opus 4.5
   - Most powerful
   - Khám phá cổ phiếu
-  - Deepest analysis
+  - Market context analysis
 end note
 
 note right of gpt
   GPT-4o
   - Creative intelligence
   - Tư vấn đầu tư
-  - Advisory planning
+  - Stock comparison
+end note
+
+note bottom of market
+  **New Specialists (v2.0):**
+  - Market Context Specialist
+  - Comparison Specialist
 end note
 
 @enduml

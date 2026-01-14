@@ -23,7 +23,7 @@ skinparam arrow {
 rectangle "Task Classifier" as classifier <<success>>
 
 ' DISCOVERY Task
-rectangle "DISCOVERY Task" as discovery_task {
+package "DISCOVERY Task" as discovery_task {
     rectangle "Claude Opus 4.5\n(Primary)" as opus_primary <<primary>>
     rectangle "Claude Sonnet 4.5\n(Fallback 1)" as sonnet_fb1 <<fallback1>>
     rectangle "GPT-4o\n(Fallback 2)" as gpt_fb1 <<fallback2>>
@@ -35,7 +35,7 @@ rectangle "DISCOVERY Task" as discovery_task {
 }
 
 ' ANALYSIS/SCREENING Task
-rectangle "ANALYSIS/SCREENING Task" as analysis_task {
+package "ANALYSIS/SCREENING Task" as analysis_task {
     rectangle "Claude Sonnet 4.5\n(Primary)" as sonnet_primary <<primary>>
     rectangle "GPT-4o\n(Fallback 1)" as gpt_fb2 <<fallback1>>
     rectangle "Claude Opus 4.5\n(Fallback 2)" as opus_fb1 <<fallback2>>
@@ -47,7 +47,7 @@ rectangle "ANALYSIS/SCREENING Task" as analysis_task {
 }
 
 ' ADVISORY Task
-rectangle "ADVISORY Task" as advisory_task {
+package "ADVISORY Task" as advisory_task {
     rectangle "GPT-4o\n(Primary)" as gpt_primary <<primary>>
     rectangle "Claude Sonnet 4.5\n(Fallback 1)" as sonnet_fb2 <<fallback1>>
     rectangle "Claude Opus 4.5\n(Fallback 2)" as opus_fb2 <<fallback2>>
@@ -59,7 +59,7 @@ rectangle "ADVISORY Task" as advisory_task {
 }
 
 ' DATA_QUERY Task
-rectangle "DATA_QUERY/CRUD Task" as data_task {
+package "DATA_QUERY/CRUD Task" as data_task {
     rectangle "Gemini 2.0 Flash\n(Primary)" as gemini_primary <<primary>>
     rectangle "Claude Sonnet 4.5\n(Fallback 1)" as sonnet_fb3 <<fallback1>>
     rectangle "GPT-4o\n(Fallback 2)" as gpt_fb3 <<fallback2>>
