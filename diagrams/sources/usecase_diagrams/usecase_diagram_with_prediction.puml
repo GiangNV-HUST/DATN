@@ -1,8 +1,8 @@
 @startuml usecase_diagram_with_prediction
-!theme plain
+!pragma charset UTF-8
 skinparam backgroundColor #FFFFFF
 skinparam shadowing false
-skinparam defaultFontName Arial
+skinparam defaultFontName "DejaVu Sans"
 
 left to right direction
 

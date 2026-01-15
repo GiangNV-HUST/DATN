@@ -1,12 +1,12 @@
 @startuml usecase_diagram_with_mcp
-!theme plain
+!pragma charset UTF-8
 skinparam backgroundColor #FEFEFE
 skinparam actorBackgroundColor #E3F2FD
 skinparam usecaseBackgroundColor #FFF9C4
 skinparam componentBackgroundColor #E1F5FE
 skinparam packageBackgroundColor #E8F5E9
 skinparam shadowing false
-skinparam defaultFontName Arial
+skinparam defaultFontName "DejaVu Sans"
 
 left to right direction
 
