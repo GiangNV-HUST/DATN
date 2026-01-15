@@ -1,154 +1,107 @@
+!pragma charset UTF-8
 @startuml sequence_uc9_discovery
 !theme plain
 skinparam backgroundColor #FEFEFE
-skinparam sequenceMessageAlign center
 skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+title UC9: Tìm kiếm & khám phá cổ phiếu (Stock Discovery)
 
 actor User
-boundary "Discord Bot" as Bot
-control "Root Agent" as Root
-control "Discovery Specialist" as Discovery
-entity "Task Classifier" as Classifier
-entity "Model Selector" as Selector
-participant "Gemini 2.0 Flash" as Flash
-participant "Claude Opus 4.5" as Opus
-entity "Usage Tracker" as Tracker
-participant "MCP Wrapper" as Wrapper
-participant "MCP Client" as Client
-participant "MCP Server" as Server
-database "Database" as Data
+participant "Root Agent" as Root
+participant "Discovery Specialist" as Discovery
+participant "Multi-Model System" as Models
+participant "MCP Server" as MCP
+database "PostgreSQL" as DB
 
-User -> Bot: "Tìm cổ phiếu công nghệ tiềm năng"
-activate Bot
-
-Bot -> Root: AI Router
+== Initialization ==
+User -> Root: "Tìm cổ phiếu công nghệ tiềm năng"
 activate Root
-Root -> Root: Agent: DiscoverySpecialist
-
-Root -> Discovery: Route request
+Root -> Discovery: Route to DiscoverySpecialist
 activate Discovery
 
-Discovery -> Classifier: classify_task
-activate Classifier
-Classifier --> Discovery: 4 sub-tasks
-deactivate Classifier
+== Phase 1: Initial Search ==
+Discovery -> MCP: Search tech stocks
+activate MCP
+MCP -> DB: SELECT stocks WHERE sector='Technology'
+activate DB
+DB --> MCP: 28 candidates
+deactivate DB
+MCP --> Discovery: Stock list
+deactivate MCP
 
-Discovery -> Selector: get_models_for_tasks
-activate Selector
-Selector --> Discovery: Model allocation
-deactivate Selector
+Discovery -> Models: Analyze & filter\\n(Claude Opus 4.5)
+activate Models
+Models --> Discovery: 20 qualified stocks
+deactivate Models
 
-Discovery -> Wrapper: search_potential_stocks
-activate Wrapper
-Wrapper -> Client: call_tool
-activate Client
-Client -> Server: Query
-activate Server
-Server -> Data: SELECT tech stocks
-activate Data
-Data --> Server: 28 candidates
-deactivate Data
-Server --> Client: List
-deactivate Server
-Client --> Wrapper: Result
-deactivate Client
-deactivate Wrapper
+== Phase 2: Criteria Filtering ==
+Discovery -> MCP: Apply filters\\n(PE < 15, ROE > 15%, Growth > 20%)
+activate MCP
+MCP -> DB: Filter by criteria
+activate DB
+DB --> MCP: 12 stocks passed
+deactivate DB
+MCP --> Discovery: Filtered list
+deactivate MCP
 
-Discovery -> Opus: Analyze & filter 28 stocks
-activate Opus
-Opus --> Discovery: 20 candidates
-deactivate Opus
+Discovery -> Models: Format screening results\\n(Gemini Flash)
+activate Models
+Models --> Discovery: 12 stocks formatted
+deactivate Models
 
-Discovery -> Tracker: Track Opus
-activate Tracker
-deactivate Tracker
+== Phase 3: Deep Analysis ==
+Discovery -> MCP: Get detailed data\\n(12 stocks)
+activate MCP
+MCP -> DB: Fetch OHLCV + fundamentals + news
+activate DB
+DB --> MCP: Detailed stock data
+deactivate DB
+MCP --> Discovery: Stock data
+deactivate MCP
 
-Discovery -> Wrapper: filter_by_criteria
-activate Wrapper
-Wrapper -> Client: call_tool
-activate Client
-Client -> Server: Apply filters
-activate Server
-Server -> Data: Filter by PE, ROE, growth
-activate Data
-Data --> Server: 12 passed
-deactivate Data
-Server --> Client: Filtered
-deactivate Server
-Client --> Wrapper: Result
-deactivate Client
-deactivate Wrapper
+== Phase 4: Ranking ==
+Discovery -> MCP: Calculate composite scores
+activate MCP
+MCP -> DB: Get news & sentiment
+activate DB
+DB --> MCP: News data
+deactivate DB
+MCP -> MCP: Compute scores:\\n• Technical (30%)\\n• Fundamental (40%)\\n• Sentiment (30%)
+MCP --> Discovery: Ranked scores
+deactivate MCP
 
-Discovery -> Flash: Format screening results
-activate Flash
-Flash --> Discovery: 12 stocks
-deactivate Flash
+Discovery -> Models: Analyze rankings\\n(Claude Opus 4.5)
+activate Models
+Models --> Discovery: Top 10 stocks with insights
+deactivate Models
 
-Discovery -> Tracker: Track Flash
-activate Tracker
-deactivate Tracker
+Discovery -> Models: Format final response\\n(Gemini Flash)
+activate Models
+Models --> Discovery: Formatted report
+deactivate Models
 
-Discovery -> Wrapper: Get detailed data (12 stocks)
-activate Wrapper
-Wrapper -> Client: call_tool
-activate Client
-Client -> Server: Fetch data
-activate Server
-Server -> Data: SELECT stock data
-activate Data
-Data --> Server: Detailed data
-deactivate Data
-Server --> Client: Result
-deactivate Server
-Client --> Wrapper: Data
-deactivate Client
-deactivate Wrapper
-
-Discovery -> Wrapper: rank_stocks_by_score
-activate Wrapper
-Wrapper -> Client: call_tool
-activate Client
-Client -> Server: Calculate scores
-activate Server
-Server -> Data: Get news & sentiment
-activate Data
-Data --> Server: News
-deactivate Data
-Server -> Server: Compute final scores
-Server --> Client: Ranked list
-deactivate Server
-Client --> Wrapper: Result
-deactivate Client
-deactivate Wrapper
-
-Discovery -> Opus: Analyze rankings
-activate Opus
-Opus --> Discovery: Top 10 ranked
-deactivate Opus
-
-Discovery -> Tracker: Track Opus
-activate Tracker
-deactivate Tracker
-
-Discovery -> Flash: Format response
-activate Flash
-Flash --> Discovery: Formatted text
-deactivate Flash
-
-Discovery -> Tracker: Track Flash
-activate Tracker
-Tracker --> Discovery: Complete
-deactivate Tracker
-
-Discovery -> Discovery: Combine results
-
-Discovery --> Root: Complete report
+== Result ==
+Discovery --> Root: Discovery report
 deactivate Discovery
-
-Root --> Bot: Response
+Root --> User: 🔍 Tìm thấy 10 cổ phiếu công nghệ:\\n\\nTop 3:\\n1. FPT: Score 8.5/10\\n2. VGI: Score 8.2/10\\n3. CMG: Score 7.9/10\\n\\n✓ Growth > 25%\\n✓ PE < 12\\n✓ Positive sentiment
 deactivate Root
 
-Bot --> User: 🔍 Tìm thấy 10 cổ phiếu công nghệ
-deactivate Bot
+note over User, DB
+  **Discovery Pipeline:**
+  • Initial search: 28 candidates
+  • Quality filter: 20 stocks
+  • Criteria filter: 12 stocks
+  • Final ranking: Top 10
+
+  **Multi-Model Usage:**
+  • Claude Opus: Deep analysis & ranking
+  • Gemini Flash: Fast formatting
+
+  **Scoring Components:**
+  • Technical indicators (30%)
+  • Fundamental metrics (40%)
+  • Market sentiment (30%)
+end note
 
 @enduml

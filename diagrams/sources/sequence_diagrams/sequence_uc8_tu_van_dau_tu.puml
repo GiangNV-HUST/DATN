@@ -1,185 +1,97 @@
+!pragma charset UTF-8
 @startuml sequence_uc8_tu_van_dau_tu
 !theme plain
 skinparam backgroundColor #FEFEFE
-skinparam sequenceMessageAlign center
 skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+title UC8: Tư vấn đầu tư (Investment Advisory)
 
 actor User
-boundary "Discord Bot" as Bot
-control "Root Agent" as Root
-control "Investment Planner" as Planner
-entity "Task Classifier" as Classifier
-entity "Model Selector" as Selector
-participant "Gemini 2.0 Flash" as Flash
-participant "Claude Sonnet 4.5" as Claude
-participant "GPT-4o" as GPT4
-entity "Usage Tracker" as Tracker
-participant "MCP Wrapper" as Wrapper
-participant "MCP Client" as Client
-participant "MCP Server" as Server
-database "Database" as DB
+participant "Root Agent" as Root
+participant "Investment Planner" as Planner
+participant "Multi-Model System" as Models
+participant "MCP Server" as MCP
+database "PostgreSQL" as DB
 
-User -> Bot: "Tư vấn danh mục 500tr, rủi ro TB"
-activate Bot
-
-Bot -> Root: AI Router
+== Initialization ==
+User -> Root: "Tư vấn danh mục 500tr, rủi ro TB"
 activate Root
-Root -> Root: Agent: InvestmentPlanner
-
-Root -> Planner: Route request
+Root -> Planner: Route to InvestmentPlanner
 activate Planner
 
-Planner -> Classifier: classify_task
-activate Classifier
-Classifier --> Planner: 7 sub-tasks
-deactivate Classifier
-
-Planner -> Selector: get_models_for_workflow
-activate Selector
-Selector --> Planner: Model allocation
-deactivate Selector
-
-Planner -> Wrapper: gather_profile(user)
-activate Wrapper
-Wrapper -> Client: call_tool
-activate Client
-Client -> Server: Get profile
-activate Server
-Server -> DB: SELECT user_profiles
+== Phase 1: Profile Analysis ==
+Planner -> MCP: Get user profile
+activate MCP
+MCP -> DB: Query user data
 activate DB
-DB --> Server: Data
+DB --> MCP: Risk: Medium, Capital: 500M
 deactivate DB
-Server --> Client: Profile
-deactivate Server
-Client --> Wrapper: Result
-deactivate Client
-deactivate Wrapper
+MCP --> Planner: Profile data
+deactivate MCP
 
-Planner -> Flash: Summarize profile
-activate Flash
-Flash --> Planner: Summary
-deactivate Flash
+Planner -> Models: Analyze profile\n(Gemini Flash)
+activate Models
+Models --> Planner: Investment goals identified
+deactivate Models
 
-Planner -> Tracker: Track Flash
-activate Tracker
-deactivate Tracker
-
-Planner -> Wrapper: search_potential_stocks
-activate Wrapper
-Wrapper -> Client: call_tool
-activate Client
-Client -> Server: Query
-activate Server
-Server -> DB: SELECT candidates
+== Phase 2: Stock Discovery ==
+Planner -> MCP: Search potential stocks\n(PE < 15, ROE > 15%)
+activate MCP
+MCP -> DB: Filter stocks
 activate DB
-DB --> Server: 45 stocks
+DB --> MCP: 45 candidates
 deactivate DB
-Server --> Client: List
-deactivate Server
-Client --> Wrapper: Result
-deactivate Client
-deactivate Wrapper
+MCP --> Planner: Stock list
+deactivate MCP
 
-Planner -> Claude: Analyze & filter 45 stocks
-activate Claude
-Claude --> Planner: 20 candidates
-deactivate Claude
+Planner -> Models: Filter & rank stocks\n(Claude Sonnet 4.5)
+activate Models
+Models --> Planner: Top 12 stocks
+deactivate Models
 
-Planner -> Tracker: Track Claude
-activate Tracker
-deactivate Tracker
-
-Planner -> Wrapper: filter_stocks
-activate Wrapper
-Wrapper -> Client: call_tool
-activate Client
-Client -> Server: Apply filters
-activate Server
-Server -> DB: Filter
+== Phase 3: Deep Analysis ==
+Planner -> MCP: Get detailed data\n(6 selected stocks)
+activate MCP
+MCP -> DB: Fetch OHLCV + fundamentals
 activate DB
-DB --> Server: 12 passed
+DB --> MCP: Historical data
 deactivate DB
-Server --> Client: Filtered
-deactivate Server
-Client --> Wrapper: Result
-deactivate Client
-deactivate Wrapper
+MCP --> Planner: Stock data
+deactivate MCP
 
-Planner -> Flash: Format filtered results
-activate Flash
-Flash --> Planner: 12 stocks
-deactivate Flash
+Planner -> Models: Analyze 6 stocks\n(Claude Sonnet 4.5)
+activate Models
+Models --> Planner: Analysis reports
+deactivate Models
 
-Planner -> Tracker: Track Flash
-activate Tracker
-deactivate Tracker
+== Phase 4: Portfolio Construction ==
+Planner -> MCP: Calculate optimal allocation\n(Markowitz)
+activate MCP
+MCP --> Planner: Weights: [20%, 18%, 17%, 16%, 15%, 14%]
+deactivate MCP
 
-Planner -> Wrapper: Get stock data (6 stocks)
-activate Wrapper
-Wrapper -> Client: call_tool (6x)
-activate Client
-Client --> Wrapper: Stock data
-deactivate Client
-deactivate Wrapper
+Planner -> Models: Generate strategy\n(GPT-4o)
+activate Models
+Models --> Planner: • Portfolio allocation\n• Entry strategy (DCA)\n• Risk management
+deactivate Models
 
-Planner -> Claude: Deep analysis (6 stocks data)
-activate Claude
-Claude --> Planner: Analysis
-deactivate Claude
-
-Planner -> Tracker: Track Claude
-activate Tracker
-deactivate Tracker
-
-Planner -> Wrapper: calculate_allocation
-activate Wrapper
-Wrapper -> Client: call_tool
-activate Client
-Client -> Server: Markowitz optimization
-activate Server
-Server --> Client: Optimal weights
-deactivate Server
-Client --> Wrapper: Result
-deactivate Client
-deactivate Wrapper
-
-Planner -> GPT4: Generate allocation strategy
-activate GPT4
-GPT4 --> Planner: Portfolio
-deactivate GPT4
-
-Planner -> Tracker: Track GPT-4o
-activate Tracker
-deactivate Tracker
-
-Planner -> GPT4: Entry strategy
-activate GPT4
-GPT4 --> Planner: DCA plan
-deactivate GPT4
-
-Planner -> Tracker: Track GPT-4o
-activate Tracker
-deactivate Tracker
-
-Planner -> GPT4: Risk management
-activate GPT4
-GPT4 --> Planner: Stop loss plan
-deactivate GPT4
-
-Planner -> Tracker: Track GPT-4o
-activate Tracker
-Tracker --> Planner: Complete
-deactivate Tracker
-
-Planner -> Planner: Combine all phases
-
-Planner --> Root: Complete plan
+== Result ==
+Planner --> Root: Investment plan
 deactivate Planner
-
-Root --> Bot: Response
+Root --> User: 📊 Kế hoạch đầu tư:\n\n6 cổ phiếu: VCB, HPG, VHM...\nVốn phân bổ: 500M VND\nChiến lược: DCA 3 tháng\nKỳ vọng: +15-20%/năm
 deactivate Root
 
-Bot --> User: 📊 Kế hoạch đầu tư 6 cổ phiếu
-deactivate Bot
+note over User, DB
+  **Multi-Model Workflow:**
+  • Gemini Flash: Quick data processing
+  • Claude Sonnet: Deep analysis & filtering
+  • GPT-4o: Creative strategy generation
+
+  **Portfolio Optimization:**
+  • Markowitz Mean-Variance
+  • Risk-adjusted returns
+  • Diversification constraints
+end note
 
 @enduml
