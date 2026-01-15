@@ -8,6 +8,7 @@ left to right direction
 
 actor "User" as User
 
+usecase "UC1: Xác thực\ndanh tính" as UC1
 usecase "UC2: Đăng ký\ncảnh báo" as UC2
 usecase "UC3: Đăng ký\ntheo dõi cổ phiếu" as UC3
 usecase "UC4: Lọc\ncổ phiếu" as UC4
@@ -17,7 +18,8 @@ usecase "UC7: Xem biểu đồ\ngiá & indicators" as UC7
 usecase "UC8: Tư vấn\nđầu tư" as UC8
 usecase "UC9: Tìm kiếm &\nkhám phá cổ phiếu" as UC9
 usecase "UC10: Dự đoán\ngiá cổ phiếu" as UC10
-usecase "UC1: Xác thực\ndanh tính" as UC1
+usecase "UC11: Xem bối cảnh\nthị trường" as UC11
+usecase "UC12: So sánh\ncổ phiếu" as UC12
 
 User --> UC1
 User --> UC2
@@ -29,6 +31,8 @@ User --> UC7
 User --> UC8
 User --> UC9
 User --> UC10
+User --> UC11
+User --> UC12
 
 UC2 ..> UC1 : <<include>>
 UC3 ..> UC1 : <<include>>
@@ -39,15 +43,7 @@ UC7 ..> UC1 : <<include>>
 UC8 ..> UC1 : <<include>>
 UC9 ..> UC1 : <<include>>
 UC10 ..> UC1 : <<include>>
-
-UC2 -[hidden]right-> UC1
-UC3 -[hidden]right-> UC1
-UC4 -[hidden]right-> UC1
-UC5 -[hidden]right-> UC1
-UC6 -[hidden]right-> UC1
-UC7 -[hidden]right-> UC1
-UC8 -[hidden]right-> UC1
-UC9 -[hidden]right-> UC1
-UC10 -[hidden]right-> UC1
+UC11 ..> UC1 : <<include>>
+UC12 ..> UC1 : <<include>>
 
 @enduml

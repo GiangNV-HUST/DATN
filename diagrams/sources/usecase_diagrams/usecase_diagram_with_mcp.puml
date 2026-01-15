@@ -23,6 +23,9 @@ rectangle "Hệ thống giao dịch chứng khoán\n(Stock Trading System)" #Lig
   usecase "UC7: Xem biểu đồ\ngiá & indicators" as UC7 #LightGreen
   usecase "UC8: Tư vấn\nđầu tư" as UC8 #LightGreen
   usecase "UC9: Tìm kiếm &\nkhám phá cổ phiếu" as UC9 #LightGreen
+  usecase "UC10: Dự đoán\ngiá cổ phiếu" as UC10 #LightGreen
+  usecase "UC11: Xem bối cảnh\nthị trường" as UC11 #LightGreen
+  usecase "UC12: So sánh\ncổ phiếu" as UC12 #LightGreen
 
   ' User connections
   User --> UC1
@@ -34,6 +37,9 @@ rectangle "Hệ thống giao dịch chứng khoán\n(Stock Trading System)" #Lig
   User --> UC7
   User --> UC8
   User --> UC9
+  User --> UC10
+  User --> UC11
+  User --> UC12
 
   ' MCP Server component
   component "MCP Server\n(25 MCP Tools)" as MCP #LightBlue {
@@ -59,6 +65,9 @@ rectangle "Hệ thống giao dịch chứng khoán\n(Stock Trading System)" #Lig
   UC7 .down.> MCP : <<uses>>
   UC8 .down.> MCP : <<uses>>
   UC9 .down.> MCP : <<uses>>
+  UC10 .down.> MCP : <<uses>>
+  UC11 .down.> MCP : <<uses>>
+  UC12 .down.> MCP : <<uses>>
 }
 
 ' External Services
