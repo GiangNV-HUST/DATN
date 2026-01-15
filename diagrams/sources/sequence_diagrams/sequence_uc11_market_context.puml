@@ -1,99 +1,66 @@
+!pragma charset UTF-8
 @startuml sequence_uc11_market_context
 !theme plain
 skinparam backgroundColor #FEFEFE
-skinparam sequenceMessageAlign center
 skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
 
-title UC11: Tổng quan thị trường (Market Context)
+title UC11: Tổng quan thị trường (Market Overview)
 
 actor User
-boundary "Discord Bot" as Bot
-control "Root Agent" as Root
-control "MarketContext Specialist" as Market
-entity "Task Classifier" as Classifier
-entity "Model Selector" as Selector
-participant "Gemini 2.0 Flash" as Flash
-participant "Claude Opus 4.5" as Claude
-entity "Usage Tracker" as Tracker
-participant "MCP Wrapper" as Wrapper
-participant "MCP Client" as Client
-participant "MCP Server" as Server
-database "Database" as DB
+participant "Root Agent" as Root
+participant "MarketContext Specialist" as Market
+participant "Multi-Model System" as Models
+participant "MCP Server" as MCP
+database "PostgreSQL" as DB
 
-User -> Bot: "Thị trường hôm nay thế nào?"
-activate Bot
-
-Bot -> Root: AI Router
+== Initialization ==
+User -> Root: "Thị trường hôm nay thế nào?"
 activate Root
-Root -> Root: Agent: MarketContextSpecialist
-
-Root -> Market: Route request
+Root -> Market: Route to MarketContextSpecialist
 activate Market
 
-Market -> Classifier: classify_task(query)
-activate Classifier
-Classifier -> Classifier: Extract: MARKET_CONTEXT task
-Classifier --> Market: Task types
-deactivate Classifier
+== Market Data Collection ==
+Market -> MCP: Get market overview
+activate MCP
+MCP -> DB: Get market data:\n• Top 100 by volume\n• Gainers & losers\n• Sector performance
+activate DB
+DB --> MCP: Market data
+deactivate DB
 
-Market -> Selector: get_models_for_tasks
-activate Selector
-Selector --> Market: Flash + Claude Opus
-deactivate Selector
+MCP -> MCP: Calculate:\n• Market breadth (advancing/declining)\n• Volume trends\n• Sector rotation
+MCP --> Market: Market statistics
+deactivate MCP
 
-== Parallel Data Gathering ==
+== Analysis ==
+Market -> Models: Summarize market data\n(Gemini Flash)
+activate Models
+Models --> Market: Market summary
+deactivate Models
 
-par get_market_overview
-    Market -> Wrapper: screen_stocks(limit=100)
-    activate Wrapper
-    Wrapper -> Client: call_tool
-    activate Client
-    Client -> Server: Fetch stocks
-    activate Server
-    Server -> DB: SELECT top 100 by volume
-    activate DB
-    DB --> Server: 100 stocks
-    deactivate DB
-    Server --> Client: Data
-    deactivate Server
-    Client --> Wrapper: Result
-    deactivate Client
-    deactivate Wrapper
+Market -> Models: Deep market analysis\n(Claude Opus 4.5)
+activate Models
+Models -> Models: Analyze trends\nSector performance\nInvestment outlook
+Models --> Market: Complete market analysis
+deactivate Models
 
-    Market -> Market: Calculate market breadth\n(advancing/declining/unchanged)
-else get_market_top_movers
-    Market -> Wrapper: screen_stocks(gainers)
-    Market -> Wrapper: screen_stocks(losers)
-    Market -> Wrapper: screen_stocks(volume)
-end
-
-Market -> Flash: Summarize market data
-activate Flash
-Flash --> Market: Summary
-deactivate Flash
-
-Market -> Tracker: Track Gemini usage
-activate Tracker
-deactivate Tracker
-
-Market -> Claude: Deep market analysis
-activate Claude
-Claude -> Claude: Analyze trends\nSector performance\nInvestment outlook
-Claude --> Market: Complete analysis
-deactivate Claude
-
-Market -> Tracker: Track Claude usage
-activate Tracker
-Tracker -> Tracker: Complete
-deactivate Tracker
-
+== Result ==
 Market --> Root: Market overview report
 deactivate Market
-
-Root --> Bot: Response
+Root --> User: 📈 Tổng quan thị trường:\n\n**Chỉ số chính:**\n• VN-Index: 1,245 (+0.8%)\n• VN30: 1,389 (+1.2%)\n• HNX-Index: 234 (-0.3%)\n\n**Diễn biến:**\n• Tăng: 245 | Giảm: 183\n• Thanh khoản: 18,500 tỷ (+15%)\n\n**Top Gainers:**\n1. VCB: +3.5% | 2. HPG: +2.8%\n\n**Phân tích:**\nThị trường tích cực, dòng tiền\nvào ngân hàng & thép
 deactivate Root
 
-Bot --> User: 📈 Tổng quan thị trường
-deactivate Bot
+note over User, DB
+  **Market Metrics:**
+  • Index performance (VN-Index, VN30, HNX)
+  • Market breadth (advancing/declining)
+  • Trading volume & liquidity
+  • Top movers (gainers/losers)
+  • Sector rotation analysis
+
+  **Multi-Model Usage:**
+  • Gemini Flash: Fast market summarization
+  • Claude Opus: Deep trend analysis
+end note
 
 @enduml

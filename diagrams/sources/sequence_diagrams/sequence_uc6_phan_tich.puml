@@ -1,101 +1,69 @@
+!pragma charset UTF-8
 @startuml sequence_uc6_phan_tich
 !theme plain
 skinparam backgroundColor #FEFEFE
-skinparam sequenceMessageAlign center
 skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+title UC6: Phân tích kỹ thuật & tài chính (Stock Analysis)
 
 actor User
-boundary "Discord Bot" as Bot
-control "Root Agent" as Root
-control "Analysis Agent" as Analysis
-entity "Task Classifier" as Classifier
-entity "Model Selector" as Selector
-participant "Gemini 2.0 Flash" as Flash
-participant "Claude Sonnet 4.5" as Claude
-entity "Usage Tracker" as Tracker
-participant "MCP Wrapper" as Wrapper
-participant "MCP Client" as Client
-participant "MCP Server" as Server
-database "Database" as DB
+participant "Root Agent" as Root
+participant "Analysis Specialist" as Analysis
+participant "Multi-Model System" as Models
+participant "MCP Server" as MCP
+database "PostgreSQL" as DB
 
-User -> Bot: "Phân tích cổ phiếu VCB"
-activate Bot
-
-Bot -> Root: AI Router
+== Initialization ==
+User -> Root: "Phân tích cổ phiếu VCB"
 activate Root
-Root -> Root: Agent: AnalysisSpecialist
-
-Root -> Analysis: Route request
+Root -> Analysis: Route to AnalysisSpecialist
 activate Analysis
 
-Analysis -> Classifier: classify_task(query)
-activate Classifier
-Classifier -> Classifier: Extract: ANALYSIS task
-Classifier --> Analysis: Task types
-deactivate Classifier
-
-Analysis -> Selector: get_models_for_tasks
-activate Selector
-Selector --> Analysis: Flash + Claude
-deactivate Selector
-
-Analysis -> Wrapper: get_stock_data(VCB, 90d)
-activate Wrapper
-Wrapper -> Client: call_tool
-activate Client
-Client -> Server: Fetch data
-activate Server
-Server -> DB: SELECT price history
+== Data Collection ==
+Analysis -> MCP: Get stock data\n(VCB, 90 days)
+activate MCP
+MCP -> DB: Get price history & fundamentals
 activate DB
-DB --> Server: 90 rows
+DB --> MCP: 90-day OHLCV + indicators + financials
 deactivate DB
-Server --> Client: Data
-deactivate Server
-Client --> Wrapper: Result
-deactivate Client
-deactivate Wrapper
+MCP --> Analysis: Complete stock data
+deactivate MCP
 
-Analysis -> Flash: Summarize raw data
-activate Flash
-Flash --> Analysis: Summary
-deactivate Flash
+== Analysis ==
+Analysis -> Models: Summarize data\n(Gemini Flash)
+activate Models
+Models --> Analysis: Data summary
+deactivate Models
 
-Analysis -> Tracker: Track Gemini usage
-activate Tracker
-deactivate Tracker
+Analysis -> Models: Deep analysis\n(Claude Sonnet 4.5)
+activate Models
+Models -> Models: Technical analysis\nFundamental analysis\nValuation & recommendation
+Models --> Analysis: Complete analysis report
+deactivate Models
 
-Analysis -> Claude: Deep analysis
-activate Claude
-Claude -> Claude: Technical + Fundamental
-Claude --> Analysis: Complete analysis
-deactivate Claude
+== Chart Generation ==
+Analysis -> MCP: Generate analysis chart
+activate MCP
+MCP --> Analysis: Chart image with indicators
+deactivate MCP
 
-Analysis -> Tracker: Track Claude usage
-activate Tracker
-Tracker -> Tracker: Complete
-deactivate Tracker
-
-Analysis -> Wrapper: generate_chart
-activate Wrapper
-Wrapper -> Client: call_tool
-activate Client
-Client -> Server: Create chart
-activate Server
-Server --> Client: Chart image
-deactivate Server
-Client --> Wrapper: Result
-deactivate Client
-deactivate Wrapper
-
-Analysis -> Analysis: Combine results
-
-Analysis --> Root: Complete report
+== Result ==
+Analysis --> Root: Complete analysis package
 deactivate Analysis
-
-Root --> Bot: Response
+Root --> User: 📊 Phân tích VCB:\n\n**Kỹ thuật:**\n• Xu hướng: Tăng (MA5>MA20)\n• RSI: 58 (Neutral)\n• MACD: Positive crossover\n\n**Cơ bản:**\n• PE: 12.5 (Hợp lý)\n• ROE: 18% (Tốt)\n• EPS growth: +15%\n\n💡 Khuyến nghị: MUA\n[Chart attached]
 deactivate Root
 
-Bot --> User: 📊 Phân tích VCB hoàn chỉnh
-deactivate Bot
+note over User, DB
+  **Analysis Components:**
+  • Technical: Price action, indicators, patterns
+  • Fundamental: Financial ratios, growth metrics
+  • Valuation: Fair price estimation
+  • Chart: Visual representation
+
+  **Multi-Model Usage:**
+  • Gemini Flash: Fast data summarization
+  • Claude Sonnet: Deep analysis & insights
+end note
 
 @enduml

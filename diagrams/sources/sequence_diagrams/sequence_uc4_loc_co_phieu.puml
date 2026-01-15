@@ -1,103 +1,76 @@
+!pragma charset UTF-8
 @startuml sequence_uc4_loc_co_phieu
 !theme plain
 skinparam backgroundColor #FEFEFE
-skinparam sequenceMessageAlign center
 skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
+
+title UC4: Lọc cổ phiếu (Stock Screening)
 
 actor User
-boundary "Discord Bot" as Bot
-control "Root Agent" as Root
-control "Screener Agent" as Screener
-entity "Task Classifier" as Classifier
-entity "Model Selector" as Selector
-participant "Gemini 2.0 Flash" as Flash
-participant "Claude Sonnet 4.5" as Claude
-entity "Usage Tracker" as Tracker
-participant "MCP Wrapper" as Wrapper
-participant "MCP Client" as Client
-participant "MCP Server" as Server
+participant "Root Agent" as Root
+participant "Screener Specialist" as Screener
+participant "Multi-Model System" as Models
+participant "MCP Server" as MCP
 participant "TCBS API" as TCBS
-database "Database" as DB
+database "PostgreSQL" as DB
 
-User -> Bot: "Lọc cổ phiếu RSI<30, PE<15"
-activate Bot
-
-Bot -> Root: AI Router
+== Initialization ==
+User -> Root: "Lọc cổ phiếu RSI<30, PE<15"
 activate Root
-Root -> Root: Target: ScreenerSpecialist
-
-Root -> Screener: Route request
+Root -> Screener: Route to ScreenerSpecialist
 activate Screener
 
-Screener -> Classifier: classify_task
-activate Classifier
-Classifier --> Screener: SCREENING task
-deactivate Classifier
+== Parse Criteria ==
+Screener -> Models: Parse screening criteria\n(Gemini Flash)
+activate Models
+Models --> Screener: Parsed: RSI<30, PE<15
+deactivate Models
 
-Screener -> Selector: get_models_for_task
-activate Selector
-Selector --> Screener: Claude + Flash
-deactivate Selector
+== Data Screening ==
+Screener -> MCP: screen_stocks(criteria)
+activate MCP
+MCP -> MCP: Check cache: MISS
 
-Screener -> Flash: Parse criteria
-activate Flash
-Flash --> Screener: Parsed
-deactivate Flash
-
-Screener -> Tracker: Track Flash
-activate Tracker
-deactivate Tracker
-
-Screener -> Wrapper: screen_stocks(conditions)
-activate Wrapper
-
-Wrapper -> Client: call_tool(screen_stocks)
-activate Client
-Client -> Client: Check cache: MISS
-
-Client -> Server: screen_stocks
-activate Server
-
-Server -> TCBS: POST /stock/screen
+MCP -> TCBS: POST /stock/screen
 activate TCBS
-TCBS --> Server: Stock list
+TCBS --> MCP: Stock list from exchange
 deactivate TCBS
 
-Server -> DB: SELECT with RSI filter
+MCP -> DB: Filter by RSI & PE
 activate DB
-DB --> Server: Technical data
+DB --> MCP: Technical + fundamental data
 deactivate DB
 
-Server -> Server: Merge & filter
+MCP -> MCP: Merge & filter\n→ 18 stocks matched
+MCP -> MCP: Save to cache (10 min)
+MCP --> Screener: 18 matched stocks
+deactivate MCP
 
-Server --> Client: 18 stocks matched
-deactivate Server
+== Analysis ==
+Screener -> Models: Analyze & rank\n(Claude Sonnet 4.5)
+activate Models
+Models --> Screener: Ranked list with insights
+deactivate Models
 
-Client -> Client: Save to cache (10 min)
-
-Client --> Wrapper: Result
-deactivate Client
-
-Wrapper --> Screener: Stock list
-deactivate Wrapper
-
-Screener -> Claude: Analyze & rank results
-activate Claude
-Claude --> Screener: 18 stocks ranked
-deactivate Claude
-
-Screener -> Tracker: Track Claude
-activate Tracker
-Tracker --> Screener: Complete
-deactivate Tracker
-
-Screener --> Root: Formatted result
+== Result ==
+Screener --> Root: Screening result
 deactivate Screener
-
-Root --> Bot: Response
+Root --> User: 📊 Tìm thấy 18 mã thỏa điều kiện:\n\nTop 5:\n1. HPG: RSI 28 | PE 9.5 ⭐\n2. VHM: RSI 25 | PE 12.3\n3. MSN: RSI 29 | PE 14.8\n4. POW: RSI 27 | PE 11.2\n5. GAS: RSI 26 | PE 13.5\n\n💡 18 cổ phiếu đang oversold
 deactivate Root
 
-Bot --> User: 📊 Tìm thấy 18 mã thỏa điều kiện
-deactivate Bot
+note over User, DB
+  **Screening Process:**
+  • Parse user criteria with AI
+  • Fetch from TCBS API
+  • Filter with DB technical data
+  • Cache results (10 min TTL)
+  • Rank by AI analysis
+
+  **Common Filters:**
+  • Technical: RSI, MACD, MA
+  • Fundamental: PE, ROE, EPS
+  • Volume & liquidity metrics
+end note
 
 @enduml

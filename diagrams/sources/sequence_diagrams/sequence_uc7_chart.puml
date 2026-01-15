@@ -1,102 +1,74 @@
+!pragma charset UTF-8
 @startuml sequence_uc7_chart
 !theme plain
 skinparam backgroundColor #FEFEFE
-skinparam sequenceMessageAlign center
 skinparam shadowing false
+skinparam defaultFontName "Times New Roman"
 
-actor "User" as User
-boundary "Discord Bot" as Bot
-control "Root Agent" as Root
-control "Analysis Agent" as Analysis
-participant "MCP Wrapper" as Wrapper
-participant "MCP Client" as Client
-participant "MCP Server" as Server
-database "Database" as DB
+title UC7: Xem biểu đồ giá & indicators (Price Chart)
 
-User -> Bot: "Chart VCB 30 ngày"
-activate Bot
+actor User
+participant "Root Agent" as Root
+participant "Analysis Specialist" as Analysis
+participant "MCP Server" as MCP
+database "PostgreSQL" as DB
 
-Bot -> Root: AI Router
+== Initialization ==
+User -> Root: "Chart VCB 30 ngày"
 activate Root
-
-Root -> Root: Decision:\nAgent: AnalysisSpecialist\nDirect Mode possible,\nbut use Agent for context
-
-Root -> Analysis: Route request
+Root -> Analysis: Route to AnalysisSpecialist
 activate Analysis
 
-Analysis -> Analysis: Parse:\n- symbol: "VCB"\n- days: 30\n- chart_type: "candlestick"
+== Data Retrieval ==
+Analysis -> Analysis: Parse: VCB, 30 days, candlestick
 
-== Lấy dữ liệu giá ==
+Analysis -> MCP: get_price_history\n(ticker="VCB", days=30)
+activate MCP
+MCP -> MCP: Check cache: MISS
 
-Analysis -> Wrapper: 📊 **get_price_history**(\n  ticker="VCB",\n  days=30\n)
-activate Wrapper
-Wrapper -> Client: call_tool(...)
-activate Client
-Client -> Client: Check cache (miss)
-Client -> Server: get_price_history
-activate Server
-Server -> DB: SELECT time, open, high, low, close,\n       volume, ma5, ma20, ma50,\n       rsi, macd_main, macd_signal\nFROM stock_prices_1d\nWHERE ticker = 'VCB'\n  AND time >= NOW() - INTERVAL '30 days'\nORDER BY time ASC
+MCP -> DB: SELECT OHLCV + indicators
 activate DB
-DB --> Server: 30 rows
+DB --> MCP: 30 days data:\n• OHLC + Volume\n• MA5, MA20, MA50\n• RSI, MACD
 deactivate DB
-Server --> Client: Price data (30 days)
-deactivate Server
-Client -> Client: Cache (TTL: 120s)
-Client --> Wrapper: Price history
-deactivate Client
-Wrapper --> Analysis: Data
-deactivate Wrapper
 
-== Tạo biểu đồ trong Bot ==
+MCP -> MCP: Cache (TTL: 120s)
+MCP --> Analysis: Price history with indicators
+deactivate MCP
 
-Analysis --> Root: Return data to Bot\nfor chart generation
+== Chart Generation ==
+Analysis -> Analysis: Return data to Bot for local chart generation
+
+Analysis --> Root: Chart data
 deactivate Analysis
 
-Root --> Bot: Price data
+Root -> Root: Generate chart (matplotlib):\n• Subplot 1: Candlestick + MA\n• Subplot 2: Volume bars\n• Subplot 3: RSI indicator\n• Subplot 4: MACD histogram
+
+== Result ==
+Root --> User: 📈 Biểu đồ VCB - 30 ngày\n\n[Chart image attached]\n\n📊 Phân tích nhanh:\n• Xu hướng: Tăng ↗️\n• MA5 > MA20 (Golden cross)\n• RSI: 58.2 (Neutral)\n• MACD: Positive crossover\n• Volume: Tăng 15% vs TB\n\n💡 Tín hiệu kỹ thuật tích cực
 deactivate Root
 
-Bot -> Bot: **Local chart generation**\nusing matplotlib/discord.py:\n\n1. Create figure (14x10)\n2. Subplot 1: Candlestick + MA\n3. Subplot 2: Volume bars\n4. Subplot 3: RSI indicator\n5. Subplot 4: MACD histogram\n6. Style: dark theme\n7. Save to BytesIO buffer
-
-Bot -> Bot: Create Discord File:\nfile = discord.File(\n  buffer,\n  filename="VCB_chart_30d.png"\n)
-
-Bot --> User: 📈 **Biểu đồ VCB - 30 ngày**\n\n[Attached: VCB_chart_30d.png]\n\n📊 **Phân tích nhanh:**\n• Xu hướng: Tăng ↗️\n• MA5 > MA20 (Golden cross)\n• RSI: 58.2 (Neutral)\n• MACD: Positive crossover\n• Volume: Tăng 15% vs TB\n\n💡 Tín hiệu kỹ thuật tích cực.\nDùng "phân tích VCB" để xem chi tiết hơn.
-deactivate Bot
-
-note right of Bot #LightYellow
-  **Chart Generation Options:**
-
-  Option 1: MCP Server (centralized)
-  • MCP tool: generate_chart_from_data
-  • Pros: Consistent styling, caching
-  • Cons: Network overhead
-
-  Option 2: Discord Bot (local) ✅
-  • Direct matplotlib in bot code
-  • Pros: Faster, no network call
-  • Cons: Code duplication if multiple bots
-
-  Current implementation uses Option 2
-  for better performance.
-end note
-
-note over Bot, DB #LightCyan
-  **Chart includes 4 subplots:**
-
+note over User, DB
+  **Chart Components (4 subplots):**
+  
   1. Price + Moving Averages
      - Candlestick (OHLC)
      - MA5, MA20, MA50 lines
-
+  
   2. Volume
      - Green bars (price up)
      - Red bars (price down)
-
+  
   3. RSI (Relative Strength Index)
-     - Line chart
-     - Overbought (70) / Oversold (30) zones
+     - Overbought (70) / Oversold (30)
+  
+  4. MACD
+     - MACD vs Signal line
+     - Histogram
 
-  4. MACD (Moving Average Convergence Divergence)
-     - MACD line vs Signal line
-     - Histogram (difference)
+  **Implementation:**
+  - Data from MCP Server (cached)
+  - Chart generated locally in Bot
+  - Faster than server-side rendering
 end note
 
 @enduml
