@@ -27,27 +27,27 @@ def check_java():
             capture_output=True,
             text=True
         )
-        print("✅ Java installed")
+        print("[OK] Java installed")
         return True
     except FileNotFoundError:
-        print("❌ Java NOT found. Please install Java first.")
+        print("[ERROR] Java NOT found. Please install Java first.")
         return False
 
 def download_plantuml():
     """Download PlantUML jar nếu chưa có"""
     if os.path.exists(PLANTUML_JAR):
-        print(f"✅ {PLANTUML_JAR} found")
+        print(f"[OK] {PLANTUML_JAR} found")
         return True
 
-    print(f"⬇️ Downloading {PLANTUML_JAR}...")
+    print(f"[DOWNLOAD] Downloading {PLANTUML_JAR}...")
     try:
         import urllib.request
         url = "https://github.com/plantuml/plantuml/releases/download/v1.2024.0/plantuml-1.2024.0.jar"
         urllib.request.urlretrieve(url, PLANTUML_JAR)
-        print(f"✅ Downloaded {PLANTUML_JAR}")
+        print(f"[OK] Downloaded {PLANTUML_JAR}")
         return True
     except Exception as e:
-        print(f"❌ Failed to download: {e}")
+        print(f"[ERROR] Failed to download: {e}")
         print("Please download manually from: https://plantuml.com/download")
         return False
 
@@ -64,7 +64,7 @@ def render_diagram(puml_file, base_dir):
     rel_path = puml_file.relative_to(base_dir / SOURCES_DIR)
     output_subdir = base_dir / IMAGES_DIR / rel_path.parent
 
-    print(f"🎨 Rendering {rel_path}...")
+    print(f"[RENDER] {rel_path}...")
 
     try:
         # Tạo output directory
@@ -89,14 +89,14 @@ def render_diagram(puml_file, base_dir):
 
         if result.returncode == 0:
             output_file = output_subdir / f"{puml_file.stem}.{OUTPUT_FORMAT}"
-            print(f"   ✅ → {IMAGES_DIR}/{rel_path.parent}/{puml_file.stem}.{OUTPUT_FORMAT}")
+            print(f"   [OK] -> {IMAGES_DIR}/{rel_path.parent}/{puml_file.stem}.{OUTPUT_FORMAT}")
             return True
         else:
-            print(f"   ❌ Error: {result.stderr}")
+            print(f"   [ERROR] {result.stderr}")
             return False
 
     except Exception as e:
-        print(f"   ❌ Exception: {e}")
+        print(f"   [ERROR] Exception: {e}")
         return False
 
 def main():
@@ -119,10 +119,10 @@ def main():
     puml_files = find_puml_files()
 
     if not puml_files:
-        print(f"❌ No .puml files found in {SOURCES_DIR}/")
+        print(f"[ERROR] No .puml files found in {SOURCES_DIR}/")
         return 1
 
-    print(f"\n📁 Found {len(puml_files)} diagram(s) in {SOURCES_DIR}/")
+    print(f"\n[INFO] Found {len(puml_files)} diagram(s) in {SOURCES_DIR}/")
 
     # Group by category
     categories = {}
@@ -133,13 +133,13 @@ def main():
         categories[cat].append(f.name)
 
     for cat, files in categories.items():
-        print(f"\n   📂 {cat}/ ({len(files)} files)")
+        print(f"\n   [{cat}] ({len(files)} files)")
         for fname in files[:5]:
-            print(f"      • {fname}")
+            print(f"      - {fname}")
         if len(files) > 5:
             print(f"      ... and {len(files) - 5} more")
 
-    print(f"\n🚀 Starting render to {IMAGES_DIR}/...\n")
+    print(f"\n[START] Rendering to {IMAGES_DIR}/...\n")
 
     # Render all
     success_count = 0
@@ -150,9 +150,9 @@ def main():
     # Summary
     print()
     print("="*60)
-    print(f"✅ Success: {success_count}/{len(puml_files)}")
-    print(f"📂 Source: {SOURCES_DIR}/")
-    print(f"📂 Output: {IMAGES_DIR}/")
+    print(f"[DONE] Success: {success_count}/{len(puml_files)}")
+    print(f"[SOURCE] {SOURCES_DIR}/")
+    print(f"[OUTPUT] {IMAGES_DIR}/")
     print("="*60)
 
     return 0 if success_count == len(puml_files) else 1

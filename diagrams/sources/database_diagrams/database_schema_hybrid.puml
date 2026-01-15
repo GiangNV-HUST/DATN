@@ -189,11 +189,12 @@ package "User Interaction" #E1F5FE {
   TABLE(subscribe) {
     PK(id) SERIAL
     --
-    UNIQUE(user_id, ticker)
     FK(user_id) INT8
     FK(ticker) VARCHAR(20)
     create_at TIMESTAMPTZ
     user_name VARCHAR(255)
+    ..
+    UK: user_id + ticker
   }
 }
 
