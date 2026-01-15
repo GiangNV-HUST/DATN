@@ -2,6 +2,10 @@
 """
 Script để render tất cả PlantUML diagrams sang PNG
 Requires: Java + plantuml.jar
+
+Structure:
+  sources/  - chứa file .puml
+  images/   - chứa file .png đã render
 """
 
 import os
@@ -10,9 +14,10 @@ import sys
 from pathlib import Path
 
 # Configuration
-PLANTUML_JAR = "plantuml.jar"  # Hoặc đường dẫn đầy đủ
-OUTPUT_FORMAT = "png"  # png, svg, eps, pdf
-OUTPUT_DIR = "output"
+PLANTUML_JAR = "plantuml.jar"
+OUTPUT_FORMAT = "png"
+SOURCES_DIR = "sources"
+IMAGES_DIR = "images"
 
 def check_java():
     """Kiểm tra Java đã cài chưa"""
@@ -47,28 +52,32 @@ def download_plantuml():
         return False
 
 def find_puml_files():
-    """Tìm tất cả file .puml"""
+    """Tìm tất cả file .puml trong sources/"""
     current_dir = Path(__file__).parent
-    puml_files = list(current_dir.glob("*.puml"))
+    sources_path = current_dir / SOURCES_DIR
+    puml_files = list(sources_path.glob("**/*.puml"))
     return sorted(puml_files)
 
-def render_diagram(puml_file):
+def render_diagram(puml_file, base_dir):
     """Render 1 diagram"""
-    print(f"🎨 Rendering {puml_file.name}...")
+    # Tính relative path từ sources/
+    rel_path = puml_file.relative_to(base_dir / SOURCES_DIR)
+    output_subdir = base_dir / IMAGES_DIR / rel_path.parent
+
+    print(f"🎨 Rendering {rel_path}...")
 
     try:
         # Tạo output directory
-        output_dir = Path(__file__).parent / OUTPUT_DIR
-        output_dir.mkdir(exist_ok=True)
+        output_subdir.mkdir(parents=True, exist_ok=True)
 
         # Command: java -jar plantuml.jar -tpng -o output file.puml
         cmd = [
             "java",
             "-jar",
-            PLANTUML_JAR,
+            str(base_dir / PLANTUML_JAR),
             f"-t{OUTPUT_FORMAT}",
             "-o",
-            str(output_dir),
+            str(output_subdir),
             str(puml_file)
         ]
 
@@ -79,8 +88,8 @@ def render_diagram(puml_file):
         )
 
         if result.returncode == 0:
-            output_file = output_dir / f"{puml_file.stem}.{OUTPUT_FORMAT}"
-            print(f"   ✅ → {output_file}")
+            output_file = output_subdir / f"{puml_file.stem}.{OUTPUT_FORMAT}"
+            print(f"   ✅ → {IMAGES_DIR}/{rel_path.parent}/{puml_file.stem}.{OUTPUT_FORMAT}")
             return True
         else:
             print(f"   ❌ Error: {result.stderr}")
@@ -97,6 +106,8 @@ def main():
     print("="*60)
     print()
 
+    base_dir = Path(__file__).parent
+
     # Check prerequisites
     if not check_java():
         return 1
@@ -108,26 +119,40 @@ def main():
     puml_files = find_puml_files()
 
     if not puml_files:
-        print("❌ No .puml files found in current directory")
+        print(f"❌ No .puml files found in {SOURCES_DIR}/")
         return 1
 
-    print(f"\n📁 Found {len(puml_files)} diagram(s):")
-    for f in puml_files:
-        print(f"   • {f.name}")
+    print(f"\n📁 Found {len(puml_files)} diagram(s) in {SOURCES_DIR}/")
 
-    print(f"\n🚀 Starting render to {OUTPUT_FORMAT.upper()}...\n")
+    # Group by category
+    categories = {}
+    for f in puml_files:
+        cat = f.parent.name
+        if cat not in categories:
+            categories[cat] = []
+        categories[cat].append(f.name)
+
+    for cat, files in categories.items():
+        print(f"\n   📂 {cat}/ ({len(files)} files)")
+        for fname in files[:5]:
+            print(f"      • {fname}")
+        if len(files) > 5:
+            print(f"      ... and {len(files) - 5} more")
+
+    print(f"\n🚀 Starting render to {IMAGES_DIR}/...\n")
 
     # Render all
     success_count = 0
     for puml_file in puml_files:
-        if render_diagram(puml_file):
+        if render_diagram(puml_file, base_dir):
             success_count += 1
 
     # Summary
     print()
     print("="*60)
     print(f"✅ Success: {success_count}/{len(puml_files)}")
-    print(f"📂 Output directory: {OUTPUT_DIR}/")
+    print(f"📂 Source: {SOURCES_DIR}/")
+    print(f"📂 Output: {IMAGES_DIR}/")
     print("="*60)
 
     return 0 if success_count == len(puml_files) else 1
