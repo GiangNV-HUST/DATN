@@ -15,7 +15,7 @@ participant "Claude Sonnet 4.5" as claude
 participant "MCP Server" as mcp
 participant "predict_stock_price" as predict_tool
 participant "Ensemble Stacking" as ensemble
-participant "5 Base Models" as base_models
+participant "2 Base Models" as base_models
 participant "Meta-Model" as meta
 participant "Scenario Handlers" as handlers
 database "PostgreSQL" as db
@@ -55,34 +55,25 @@ predict_tool -> predict_tool: Feature engineering:\n• Technical indicators (RS
 predict_tool -> ensemble: Predict with ensemble
 activate ensemble
 
-ensemble -> base_models: Run 5 base models in parallel
+ensemble -> base_models: Run 2 base models in parallel
 activate base_models
 
 base_models -> base_models: PatchTST prediction
-note right: Transformer with patching\nMAPE: 2.23%
+note right: Transformer with patching\nfor long-term patterns
 
 base_models -> base_models: LSTM + Attention prediction
-note right: Bidirectional LSTM\nMAPE: 2.42%
+note right: Bidirectional LSTM\nfor sequential patterns
 
-base_models -> base_models: LightGBM prediction
-note right: Gradient boosting\nMAPE: 2.69%
-
-base_models -> base_models: Prophet prediction
-note right: Additive model\nMAPE: 3.23%
-
-base_models -> base_models: XGBoost prediction
-note right: Tree boosting\nMAPE: 2.78%
-
-base_models --> ensemble: Return 5 predictions:\n[102300, 101800, 102500, 101200, 102100]
+base_models --> ensemble: Return 2 predictions:\n[102300, 101800]
 deactivate base_models
 
 == Meta-Learning ==
 ensemble -> meta: Combine predictions with learned weights
 activate meta
 
-meta -> meta: Apply weights:\n• PatchTST: 28.5%\n• LSTM: 24.1%\n• LightGBM: 22.3%\n• XGBoost: 14.3%\n• Prophet: 10.8%
+meta -> meta: Apply learned weights:\n• PatchTST: 52.5%\n• LSTM+Attention: 47.5%
 
-meta --> ensemble: Base prediction: 102,300 VND
+meta --> ensemble: Base prediction: 102,050 VND
 deactivate meta
 deactivate ensemble
 
@@ -99,7 +90,7 @@ handlers -> handlers: Detect scenarios:\n✓ Foreign Flow Handler triggered\n  (
 
 handlers -> handlers: Calculate adjustment:\nForeign Flow: -3% adjustment
 
-handlers --> predict_tool: Adjusted prediction:\n102,300 → 99,231 VND (+0.74%)
+handlers --> predict_tool: Adjusted prediction:\n102,050 → 98,989 VND (+0.50%)
 deactivate handlers
 
 == Tính Confidence ==
@@ -111,11 +102,11 @@ note right
   {
     "ticker": "VCB",
     "current_price": 98500,
-    "predicted_price": 99231,
-    "change_percent": 0.74,
+    "predicted_price": 98989,
+    "change_percent": 0.50,
     "horizon": "3day",
-    "confidence": 0.78,
-    "base_prediction": 102300,
+    "confidence": 0.80,
+    "base_prediction": 102050,
     "scenario_adjustments": {
       "foreign_flow": -3.0
     },
@@ -123,10 +114,7 @@ note right
     "risk_level": "LOW",
     "individual_predictions": {
       "patchtst": 102300,
-      "lstm": 101800,
-      "lightgbm": 102500,
-      "prophet": 101200,
-      "xgboost": 102100
+      "lstm_attention": 101800
     }
   }
 end note
@@ -141,23 +129,22 @@ deactivate claude
 pred_agent --> root: Return result
 deactivate pred_agent
 
-root --> user: Display prediction:\n"Dự đoán giá VCB sau 3 ngày:\n99,231 VND (+0.74%)\n\nĐộ tin cậy: 78%\nKhuyến nghị: HOLD\n\nPhân tích:\n- Base ensemble: 102,300 VND\n- Điều chỉnh Foreign Flow: -3%\n- Room ngoại gần đầy (97.3%)"
+root --> user: Display prediction:\n"Dự đoán giá VCB sau 3 ngày:\n98,989 VND (+0.50%)\n\nĐộ tin cậy: 80%\nKhuyến nghị: HOLD\n\nPhân tích:\n- Base ensemble: 102,050 VND\n- Điều chỉnh Foreign Flow: -3%\n- Room ngoại gần đầy (97.3%)"
 deactivate root
 
 == Lưu ý ==
 note over user, db
   **Performance Metrics:**
-  • 3-day MAPE: 1.99%
-  • 3-day R²: 0.874
-  • 48-day MAPE: 14.58%
-  • 48-day R²: 0.176
+  • Optimized for short-term predictions
+  • Focus on deep learning models
+  • Tailored for Vietnamese stock market
 
-  **Ensemble Models:**
+  **Ensemble Models (2):**
   • PatchTST (Transformer)
+    - Long-term patterns recognition
   • LSTM + Attention
-  • LightGBM (Gradient Boosting)
-  • Prophet (Time Series)
-  • XGBoost (Tree Boosting)
+    - Sequential dependencies
+    - Attention mechanism for focus
 
   **Scenario Handlers:**
   • News Shock (-5% to +8%)
