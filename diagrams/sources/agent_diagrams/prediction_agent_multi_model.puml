@@ -35,12 +35,9 @@ rectangle "predict_stock_price" as predict <<tool>>
 rectangle "batch_predict_stocks" as batch_predict <<tool>>
 rectangle "get_prediction_confidence" as confidence <<tool>>
 
-package "Ensemble Stacking\n(5 Models)" as ensemble <<ensemble>> {
+package "Ensemble Stacking\n(2 Models)" as ensemble <<ensemble>> {
     rectangle "PatchTST" as patchtst
     rectangle "LSTM + Attention" as lstm
-    rectangle "LightGBM" as lgbm
-    rectangle "Prophet" as prophet
-    rectangle "XGBoost" as xgb
     rectangle "Meta-Model\n(MLPRegressor)" as meta
 }
 
@@ -72,9 +69,6 @@ batch_predict --> ensemble : "Gọi Ensemble"
 
 patchtst --> meta : "Prediction 1"
 lstm --> meta : "Prediction 2"
-lgbm --> meta : "Prediction 3"
-prophet --> meta : "Prediction 4"
-xgb --> meta : "Prediction 5"
 
 meta --> handlers : "Base prediction"
 
@@ -105,11 +99,11 @@ end note
 
 note bottom of ensemble
   **Ensemble Stacking**
-  • 5 base models với weights khác nhau
+  • 2 base models: PatchTST & LSTM+Attention
   • Meta-model: MLPRegressor (64-32 neurons)
   • Cross-validation: 5-fold
-  • MAPE: 1.99% (3d), 14.58% (48d)
-  • R²: 0.874 (3d), 0.176 (48d)
+  • Combines Transformer & RNN strengths
+  • Optimized for Vietnamese stock market
 end note
 
 note bottom of handlers
