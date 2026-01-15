@@ -7,144 +7,68 @@ skinparam defaultFontName "Times New Roman"
 
 title UC10: Dự đoán giá cổ phiếu (Stock Price Prediction)
 
-actor "User" as user
-participant "Root Agent" as root
-participant "Prediction Agent" as pred_agent
-participant "Task Classifier" as classifier
-participant "Claude Sonnet 4.5" as claude
-participant "MCP Server" as mcp
-participant "predict_stock_price" as predict_tool
-participant "Ensemble Stacking" as ensemble
-participant "2 Base Models" as base_models
-participant "Meta-Model" as meta
-participant "Scenario Handlers" as handlers
-database "PostgreSQL" as db
+actor User
+participant "Root Agent" as Root
+participant "Prediction Agent" as Prediction
+participant "Claude Sonnet 4.5" as Claude
+participant "MCP Server" as MCP
+participant "Ensemble System" as Ensemble
+database "PostgreSQL" as DB
 
-== Khởi tạo Dự đoán ==
-user -> root: "Dự đoán giá VCB 3 ngày tới"
-activate root
+== Initialization ==
+User -> Root: "Dự đoán giá VCB 3 ngày tới"
+activate Root
+Root -> Prediction: Route to PredictionAgent
+activate Prediction
+Prediction -> Claude: Execute with Claude Sonnet 4.5
+activate Claude
 
-root -> pred_agent: Route to prediction_agent
-activate pred_agent
+== Data Preparation ==
+Claude -> MCP: predict_stock_price\\n(ticker="VCB", horizon="3day")
+activate MCP
+MCP -> DB: Get historical data\\n(1000 days, 60+ indicators)
+activate DB
+DB --> MCP: OHLCV + features
+deactivate DB
 
-pred_agent -> classifier: Classify task type
-activate classifier
-classifier --> pred_agent: PREDICTION task → Claude Sonnet 4.5
-deactivate classifier
-
-pred_agent -> claude: Execute prediction task
-activate claude
-
-== Gọi MCP Tool ==
-claude -> mcp: Call predict_stock_price(\n  ticker="VCB",\n  horizon="3day",\n  include_scenarios=True\n)
-activate mcp
-
-mcp -> predict_tool: Execute prediction
-activate predict_tool
-
-== Lấy Dữ liệu Lịch sử ==
-predict_tool -> db: Query historical data\n(1000 trading days)
-activate db
-db --> predict_tool: OHLCV + indicators (60+)
-deactivate db
-
-== Feature Engineering ==
-predict_tool -> predict_tool: Feature engineering:\n• Technical indicators (RSI, MACD, BB)\n• Moving averages (5,10,20,50,200)\n• Volume indicators\n• Market sentiment
+MCP -> MCP: Feature engineering:\\n• Technical (RSI, MACD, BB)\\n• Moving averages\\n• Volume & sentiment
 
 == Ensemble Prediction ==
-predict_tool -> ensemble: Predict with ensemble
-activate ensemble
+MCP -> Ensemble: Run ensemble models
+activate Ensemble
+Ensemble -> Ensemble: PatchTST: 102,300 VND\\nLSTM+Attention: 101,800 VND
+Ensemble -> Ensemble: Meta-model combines:\\n• PatchTST: 52.5%\\n• LSTM: 47.5%\\n→ Base: 102,050 VND
+deactivate Ensemble
 
-ensemble -> base_models: Run 2 base models in parallel
-activate base_models
+== Scenario Adjustment ==
+MCP -> DB: Check market conditions
+activate DB
+DB --> MCP: Foreign flow 97.3% (>95%)
+deactivate DB
 
-base_models -> base_models: PatchTST prediction
-note right: Transformer with patching\nfor long-term patterns
+MCP -> MCP: Apply scenario handlers:\\n• Foreign Flow: -3%\\n→ Final: 98,989 VND (+0.50%)
 
-base_models -> base_models: LSTM + Attention prediction
-note right: Bidirectional LSTM\nfor sequential patterns
+MCP -> MCP: Calculate confidence: 80%\\n(Model agreement + MAPE)
 
-base_models --> ensemble: Return 2 predictions:\n[102300, 101800]
-deactivate base_models
+== Result ==
+MCP --> Claude: Prediction result:\\n98,989 VND | +0.50% | Confidence 80%
+deactivate MCP
 
-== Meta-Learning ==
-ensemble -> meta: Combine predictions with learned weights
-activate meta
+Claude -> Claude: Format analysis & recommendation
+Claude --> Prediction: Complete report
+deactivate Claude
 
-meta -> meta: Apply learned weights:\n• PatchTST: 52.5%\n• LSTM+Attention: 47.5%
+Prediction --> Root: Prediction data
+deactivate Prediction
 
-meta --> ensemble: Base prediction: 102,050 VND
-deactivate meta
-deactivate ensemble
+Root --> User: 📊 Dự đoán giá VCB (3 ngày):\\n98,989 VND (+0.50%)\\n\\nĐộ tin cậy: 80%\\nKhuyến nghị: HOLD\\n\\nPhân tích:\\n- Base ensemble: 102,050 VND\\n- Điều chỉnh: -3% (Foreign flow)\\n- Room ngoại: 97.3% (gần đầy)
+deactivate Root
 
-== Scenario Handling ==
-predict_tool -> handlers: Check scenario triggers
-activate handlers
-
-handlers -> db: Query market conditions
-activate db
-db --> handlers: • VN-Index: -0.5%\n• Foreign flow: 97.3% room used\n• News: None\n• VN30 rebalance: None
-deactivate db
-
-handlers -> handlers: Detect scenarios:\n✓ Foreign Flow Handler triggered\n  (room 97.3% > 95%)
-
-handlers -> handlers: Calculate adjustment:\nForeign Flow: -3% adjustment
-
-handlers --> predict_tool: Adjusted prediction:\n102,050 → 98,989 VND (+0.50%)
-deactivate handlers
-
-== Tính Confidence ==
-predict_tool -> predict_tool: Calculate confidence:\n• Model agreement: 85%\n• Historical MAPE: 1.99%\n• Scenario impact: Medium\n→ Confidence: 78%
-
-== Kết quả ==
-predict_tool --> mcp: Return prediction result:
-note right
-  {
-    "ticker": "VCB",
-    "current_price": 98500,
-    "predicted_price": 98989,
-    "change_percent": 0.50,
-    "horizon": "3day",
-    "confidence": 0.80,
-    "base_prediction": 102050,
-    "scenario_adjustments": {
-      "foreign_flow": -3.0
-    },
-    "recommendation": "HOLD",
-    "risk_level": "LOW",
-    "individual_predictions": {
-      "patchtst": 102300,
-      "lstm_attention": 101800
-    }
-  }
-end note
-deactivate predict_tool
-deactivate mcp
-
-claude -> claude: Format response with:\n• Prediction summary\n• Scenario analysis\n• Risk assessment\n• Trading recommendation
-
-claude --> pred_agent: Formatted prediction
-deactivate claude
-
-pred_agent --> root: Return result
-deactivate pred_agent
-
-root --> user: Display prediction:\n"Dự đoán giá VCB sau 3 ngày:\n98,989 VND (+0.50%)\n\nĐộ tin cậy: 80%\nKhuyến nghị: HOLD\n\nPhân tích:\n- Base ensemble: 102,050 VND\n- Điều chỉnh Foreign Flow: -3%\n- Room ngoại gần đầy (97.3%)"
-deactivate root
-
-== Lưu ý ==
-note over user, db
-  **Performance Metrics:**
-  • Optimized for short-term predictions
-  • Focus on deep learning models
-  • Tailored for Vietnamese stock market
-
-  **Ensemble Models (2):**
-  • PatchTST (Transformer)
-    - Long-term patterns recognition
-  • LSTM + Attention
-    - Sequential dependencies
-    - Attention mechanism for focus
+note over User, DB
+  **Ensemble Stacking (2 Models):**
+  • PatchTST: Transformer-based
+  • LSTM+Attention: Sequential patterns
+  • Meta-model: MLPRegressor
 
   **Scenario Handlers:**
   • News Shock (-5% to +8%)
@@ -152,6 +76,11 @@ note over user, db
   • Foreign Flow (-3% to +2%)
   • VN30 Adjustment (-5% to +5%)
   • Margin Call (-10% to -5%)
+
+  **Confidence Calculation:**
+  • Model agreement: 85%
+  • Historical MAPE: 1.99%
+  • Scenario impact: Medium
 end note
 
 @enduml
