@@ -6,6 +6,7 @@ skinparam usecaseBackgroundColor #FFF9C4
 skinparam componentBackgroundColor #E1F5FE
 skinparam packageBackgroundColor #E8F5E9
 skinparam shadowing false
+skinparam defaultFontName Arial
 
 left to right direction
 
