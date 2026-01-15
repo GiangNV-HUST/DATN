@@ -30,13 +30,13 @@ deactivate DB
 MCP --> Discovery: Stock list
 deactivate MCP
 
-Discovery -> Models: Analyze & filter\\n(Claude Opus 4.5)
+Discovery -> Models: Analyze & filter\n(Claude Opus 4.5)
 activate Models
 Models --> Discovery: 20 qualified stocks
 deactivate Models
 
 == Phase 2: Criteria Filtering ==
-Discovery -> MCP: Apply filters\\n(PE < 15, ROE > 15%, Growth > 20%)
+Discovery -> MCP: Apply filters\n(PE < 15, ROE > 15%, Growth > 20%)
 activate MCP
 MCP -> DB: Filter by criteria
 activate DB
@@ -45,13 +45,13 @@ deactivate DB
 MCP --> Discovery: Filtered list
 deactivate MCP
 
-Discovery -> Models: Format screening results\\n(Gemini Flash)
+Discovery -> Models: Format screening results\n(Gemini Flash)
 activate Models
 Models --> Discovery: 12 stocks formatted
 deactivate Models
 
 == Phase 3: Deep Analysis ==
-Discovery -> MCP: Get detailed data\\n(12 stocks)
+Discovery -> MCP: Get detailed data\n(12 stocks)
 activate MCP
 MCP -> DB: Fetch OHLCV + fundamentals + news
 activate DB
@@ -67,16 +67,16 @@ MCP -> DB: Get news & sentiment
 activate DB
 DB --> MCP: News data
 deactivate DB
-MCP -> MCP: Compute scores:\\n• Technical (30%)\\n• Fundamental (40%)\\n• Sentiment (30%)
+MCP -> MCP: Compute scores:\n• Technical (30%)\n• Fundamental (40%)\n• Sentiment (30%)
 MCP --> Discovery: Ranked scores
 deactivate MCP
 
-Discovery -> Models: Analyze rankings\\n(Claude Opus 4.5)
+Discovery -> Models: Analyze rankings\n(Claude Opus 4.5)
 activate Models
 Models --> Discovery: Top 10 stocks with insights
 deactivate Models
 
-Discovery -> Models: Format final response\\n(Gemini Flash)
+Discovery -> Models: Format final response\n(Gemini Flash)
 activate Models
 Models --> Discovery: Formatted report
 deactivate Models
@@ -84,7 +84,7 @@ deactivate Models
 == Result ==
 Discovery --> Root: Discovery report
 deactivate Discovery
-Root --> User: 🔍 Tìm thấy 10 cổ phiếu công nghệ:\\n\\nTop 3:\\n1. FPT: Score 8.5/10\\n2. VGI: Score 8.2/10\\n3. CMG: Score 7.9/10\\n\\n✓ Growth > 25%\\n✓ PE < 12\\n✓ Positive sentiment
+Root --> User: 🔍 Tìm thấy 10 cổ phiếu công nghệ:\n\nTop 3:\n1. FPT: Score 8.5/10\n2. VGI: Score 8.2/10\n3. CMG: Score 7.9/10\n\n✓ Growth > 25%\n✓ PE < 12\n✓ Positive sentiment
 deactivate Root
 
 note over User, DB

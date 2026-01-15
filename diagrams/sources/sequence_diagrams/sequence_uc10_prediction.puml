@@ -24,20 +24,20 @@ Prediction -> Claude: Execute with Claude Sonnet 4.5
 activate Claude
 
 == Data Preparation ==
-Claude -> MCP: predict_stock_price\\n(ticker="VCB", horizon="3day")
+Claude -> MCP: predict_stock_price\n(ticker="VCB", horizon="3day")
 activate MCP
-MCP -> DB: Get historical data\\n(1000 days, 60+ indicators)
+MCP -> DB: Get historical data\n(1000 days, 60+ indicators)
 activate DB
 DB --> MCP: OHLCV + features
 deactivate DB
 
-MCP -> MCP: Feature engineering:\\n• Technical (RSI, MACD, BB)\\n• Moving averages\\n• Volume & sentiment
+MCP -> MCP: Feature engineering:\n• Technical (RSI, MACD, BB)\n• Moving averages\n• Volume & sentiment
 
 == Ensemble Prediction ==
 MCP -> Ensemble: Run ensemble models
 activate Ensemble
-Ensemble -> Ensemble: PatchTST: 102,300 VND\\nLSTM+Attention: 101,800 VND
-Ensemble -> Ensemble: Meta-model combines:\\n• PatchTST: 52.5%\\n• LSTM: 47.5%\\n→ Base: 102,050 VND
+Ensemble -> Ensemble: PatchTST: 102,300 VND\nLSTM+Attention: 101,800 VND
+Ensemble -> Ensemble: Meta-model combines:\n• PatchTST: 52.5%\n• LSTM: 47.5%\n→ Base: 102,050 VND
 deactivate Ensemble
 
 == Scenario Adjustment ==
@@ -46,12 +46,12 @@ activate DB
 DB --> MCP: Foreign flow 97.3% (>95%)
 deactivate DB
 
-MCP -> MCP: Apply scenario handlers:\\n• Foreign Flow: -3%\\n→ Final: 98,989 VND (+0.50%)
+MCP -> MCP: Apply scenario handlers:\n• Foreign Flow: -3%\n→ Final: 98,989 VND (+0.50%)
 
-MCP -> MCP: Calculate confidence: 80%\\n(Model agreement + MAPE)
+MCP -> MCP: Calculate confidence: 80%\n(Model agreement + MAPE)
 
 == Result ==
-MCP --> Claude: Prediction result:\\n98,989 VND | +0.50% | Confidence 80%
+MCP --> Claude: Prediction result:\n98,989 VND | +0.50% | Confidence 80%
 deactivate MCP
 
 Claude -> Claude: Format analysis & recommendation
@@ -61,7 +61,7 @@ deactivate Claude
 Prediction --> Root: Prediction data
 deactivate Prediction
 
-Root --> User: 📊 Dự đoán giá VCB (3 ngày):\\n98,989 VND (+0.50%)\\n\\nĐộ tin cậy: 80%\\nKhuyến nghị: HOLD\\n\\nPhân tích:\\n- Base ensemble: 102,050 VND\\n- Điều chỉnh: -3% (Foreign flow)\\n- Room ngoại: 97.3% (gần đầy)
+Root --> User: 📊 Dự đoán giá VCB (3 ngày):\n98,989 VND (+0.50%)\n\nĐộ tin cậy: 80%\nKhuyến nghị: HOLD\n\nPhân tích:\n- Base ensemble: 102,050 VND\n- Điều chỉnh: -3% (Foreign flow)\n- Room ngoại: 97.3% (gần đầy)
 deactivate Root
 
 note over User, DB
